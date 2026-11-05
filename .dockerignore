@@ -1,0 +1,20 @@
+.env
+data/
+.git/
+.gitignore
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+tests/
+requirements-dev.txt
+pytest.ini
+*.db
+*.db-wal
+*.db-shm
+
+# v2.3: промокоды не нужны в образе (они уже в базе после миграции 0005)
+promo_codes.txt
+promo_codes_new.txt

@@ -1,0 +1,16 @@
+.env
+data/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+*.db
+*.db-wal
+*.db-shm
+.DS_Store
+
+# v2.3: промокоды — секрет, в git и в docker-образ не кладём
+promo_codes.txt
+promo_codes_new.txt
