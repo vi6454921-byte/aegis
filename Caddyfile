@@ -1,0 +1,6 @@
+# Домен берётся из переменной DOMAIN (.env). Сертификат HTTPS Caddy получает сам —
+# нужно, чтобы A-запись домена указывала на сервер, а порты 80 и 443 были открыты.
+{$DOMAIN:localhost} {
+	encode zstd gzip
+	reverse_proxy bot:8080
+}

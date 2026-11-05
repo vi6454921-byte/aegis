@@ -1,0 +1,44 @@
+# Запуск: docker compose up -d --build
+# Только бот, без домена и HTTPS: docker compose up -d --build bot
+services:
+  bot:
+    build: .
+    container_name: aegis-bot
+    env_file: .env
+    environment:
+      TZ: Europe/Samara
+      WEB_HOST: 0.0.0.0
+      WEB_PORT: "8080"
+    volumes:
+      - ./data:/app/data
+    expose:
+      - "8080"
+    restart: unless-stopped
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # HTTPS для Mini App: Caddy сам получает и продлевает сертификат Let's Encrypt для DOMAIN из .env.
+  caddy:
+    image: caddy:2
+    container_name: aegis-caddy
+    depends_on:
+      - bot
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
