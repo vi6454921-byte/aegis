@@ -19,7 +19,7 @@ L2 = IsAdmin(2)  # для отдельных хендлеров: только с
 
 
 def admin_router(name: str, level: int = 1) -> Router:
-    """Фильтр IsAdmin висит на message и callback_query роутера — значит, на каждом его хендлере."""
+    """Фильтр IsAdmin висит на message и callback_query роутера - значит, на каждом его хендлере."""
     router = Router(name=name)
     router.message.filter(IsAdmin(level))
     router.callback_query.filter(IsAdmin(level))
@@ -31,7 +31,7 @@ def menu_btn() -> InlineKeyboardButton:
 
 
 def cancel_btn(back: AdminCb | None = None, text: str = "✖️ Отмена") -> InlineKeyboardButton:
-    """Отмена ввода. back — куда вернуться (экран перерисуется на месте), иначе просто убрать вопрос."""
+    """Отмена ввода. back - куда вернуться (экран перерисуется на месте), иначе просто убрать вопрос."""
     if back is None:
         return cb(text, AdminCb(s="x"))
     return cb(text, AdminCb(s="x", a=back.s, id=back.id, v=back.a + (f"|{back.v}" if back.v else ""), p=back.p))
@@ -48,7 +48,7 @@ def back_of(x: AdminCb) -> AdminCb | None:
 async def ask(call: CallbackQuery, state: FSMContext, st: State, text: str, kb: InlineKeyboardMarkup,
               **data) -> None:
     """Вопрос админу: экран перерисовывается в вопрос на месте (повторное нажатие не плодит сообщения),
-    id сообщения запоминается — после ответа вопрос убирается. Под фото/файлом — вопрос новым сообщением."""
+    id сообщения запоминается - после ответа вопрос убирается. Под фото/файлом - вопрос новым сообщением."""
     await state.set_state(st)
     shown = await show(call, text, kb)
     if shown is None:

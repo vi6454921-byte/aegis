@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def total(session: AsyncSession, column, *where) -> int:  # noqa: ANN001
-    """Сумма столбца по строкам, подходящим под условия (пусто — 0)."""
+    """Сумма столбца по строкам, подходящим под условия (пусто - 0)."""
     q = select(column)
     if where:
         q = q.where(*where)
@@ -21,7 +21,7 @@ async def total(session: AsyncSession, column, *where) -> int:  # noqa: ANN001
 
 
 async def grouped(session: AsyncSession, key, column, *where) -> dict:  # noqa: ANN001
-    """{значение key: сумма column} — аналог GROUP BY key с SUM(column)."""
+    """{значение key: сумма column} - аналог GROUP BY key с SUM(column)."""
     q = select(key, column)
     if where:
         q = q.where(*where)

@@ -23,7 +23,7 @@ from app.services import tickets
 from app.utils.timeutil import now_utc
 
 router = Router(name="support")
-# v2.3: ответ свайпом на сообщение команды — из любого шага (подключается сразу после админки, до сценариев)
+# v2.3: ответ свайпом на сообщение команды - из любого шага (подключается сразу после админки, до сценариев)
 reply_router = Router(name="support_reply")
 TOPIC_KIND = {"support": "support", "general": "support", "pay": "pay", "order": "order", "appeal": "appeal"}
 _albums: dict[str, tuple[int, float]] = {}  # media_group_id → (обращение, время): у альбома один заголовок
@@ -35,7 +35,7 @@ async def start_support(message: Message, state: FSMContext, config: Config, top
     await state.set_state(SupportSG.message)
     await state.update_data(topic=kind, order_id=order_id, ticket_id=ticket_id)
     if ticket_id:
-        text = "💬 Напиши ответ одним сообщением (можно с фото или файлом) — передадим команде."
+        text = "💬 Напиши ответ одним сообщением (можно с фото или файлом): передадим команде."
     elif kind == "pay":
         text = texts.PAYSUPPORT_PROMPT
     elif kind == "order":
@@ -94,14 +94,16 @@ async def cb_support_cancel(call: CallbackQuery, state: FSMContext) -> None:
 
 
 async def deliver(message: Message, session: AsyncSession, db_user: User, bot: Bot, config: Config, kind: str,
-                  order_id: int = 0, ticket_id: int = 0) -> bool:
-    """Записывает сообщение в обращение и шлёт админам. False — сообщение не подходит (уже ответили клиенту)."""
+                  order_id: int = 0, ticket_id: int = 0, *, note: str | None = None,
+                  only: set[int] | None = None) -> bool:
+    """Записывает сообщение в обращение и шлёт админам (only - только этим). False - сообщение не подходит
+    (уже ответили клиенту)."""
     body = message_text(message) or ""
     if not copyable(message) or (content_type(message) == "text" and not body.strip()):
         await message.answer("Пришли текст, фото или файл 🙂")
         return False
     if len(body) > MAX_TEXT:
-        await message.answer(f"Слишком длинно — уложись в {MAX_TEXT} символов или разбей на части.")
+        await message.answer(f"Слишком длинно: уложись в {MAX_TEXT} символов или разбей на части.")
         return False
     now = now_utc()
     album = message.media_group_id
@@ -121,7 +123,7 @@ async def deliver(message: Message, session: AsyncSession, db_user: User, bot: B
             for key in [k for k, (_, t) in _albums.items() if t < cutoff]:
                 _albums.pop(key, None)
     tickets.add_in(session, ticket, content_type(message), body, message.message_id, now)
-    await to_staff(bot, session, config, ticket, db_user, message, new=created, header=header)
+    await to_staff(bot, session, config, ticket, db_user, message, new=created, header=header, note=note, only=only)
     await session.commit()
     return True
 
@@ -146,7 +148,7 @@ async def support_message(message: Message, state: FSMContext, session: AsyncSes
 
 
 async def replied_ticket(message: Message, session: AsyncSession) -> dict | bool:
-    """Клиент ответил свайпом на сообщение команды — найдём обращение."""
+    """Клиент ответил свайпом на сообщение команды - найдём обращение."""
     r = message.reply_to_message
     if r is None or message.from_user is None:
         return False
@@ -157,7 +159,7 @@ async def replied_ticket(message: Message, session: AsyncSession) -> dict | bool
 @reply_router.message(replied_ticket)
 async def support_by_reply(message: Message, state: FSMContext, session: AsyncSession, db_user: User, bot: Bot,
                            config: Config, reply_ticket) -> None:  # noqa: ANN001
-    """Свайп-ответ на сообщение команды — в ту же переписку (по заказу — в переписку заказа), из любого шага:
+    """Свайп-ответ на сообщение команды - в ту же переписку (по заказу - в переписку заказа), из любого шага:
     черновик заказа и другие вводы не сбиваются, а ответ «💬 Ответить» (SupportSG) считается отправленным."""
     if await state.get_state() == SupportSG.message.state:
         await state.clear()
@@ -178,10 +180,3 @@ async def album_continues(message: Message, state: FSMContext) -> dict | bool:
 async def support_album_rest(message: Message, session: AsyncSession, db_user: User, bot: Bot, config: Config,
                              album_ticket_id: int) -> None:
     await deliver(message, session, db_user, bot, config, "support", 0, album_ticket_id)
-
-
-# ------------------------------------------------------------------ старая кнопка «↩️ Вернуть рубли» (до v2.2)
-@router.callback_query(MenuCb.filter(F.action == "withdraw"))
-async def withdraw(call: CallbackQuery) -> None:
-    """Кнопку убрали в 2.2: вывод денег в разработке. Старые сообщения с ней отвечают подсказкой."""
-    await call.answer(texts.WITHDRAW_OLD_BUTTON, show_alert=True)

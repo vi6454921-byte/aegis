@@ -1,8 +1,8 @@
 """Выдача и списание денег админом 2 уровня (v2.2): обычные рубли на балансе (account "rub").
 
 Через журнал (ledger) под app_lock, с записью в admin_log. Повторное нажатие «Подтвердить» не начисляет дважды:
-у каждой операции одноразовый код op — если он уже есть в журнале админа, операция не повторяется.
-Списание не уводит баланс ниже нуля: списывается не больше, чем есть. Сумма — любая, лишь бы влезла в BIGINT.
+у каждой операции одноразовый код op - если он уже есть в журнале админа, операция не повторяется.
+Списание не уводит баланс ниже нуля: списывается не больше, чем есть. Сумма - любая, лишь бы влезла в BIGINT.
 """
 from __future__ import annotations
 
@@ -31,8 +31,8 @@ class GiveResult:
     applied: int  # фактически: + начислено, − списано (копейки)
     before: int
     after: int
-    clamped: bool = False  # списали меньше запрошенного — на балансе было меньше
-    nothing: bool = False  # баланс 0 — списывать нечего
+    clamped: bool = False  # списали меньше запрошенного - на балансе было меньше
+    nothing: bool = False  # баланс 0 - списывать нечего
     duplicate: bool = False  # эта операция уже выполнена (повторное нажатие)
 
 
@@ -53,7 +53,7 @@ async def _done_before(session: AsyncSession, admin_id: int, op: str) -> bool:
 
 async def give(session: AsyncSession, user_id: int, amount: int, comment: str | None, admin_id: int,
                op: str, now: datetime) -> GiveResult:
-    """amount > 0 — выдать, < 0 — списать. Коммитит."""
+    """amount > 0 - выдать, < 0 - списать. Коммитит."""
     if amount == 0:
         raise GiveError("Сумма не может быть нулевой.")
     comment = (comment or "").strip()[:500] or None

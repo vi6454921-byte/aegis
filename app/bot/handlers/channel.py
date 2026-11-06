@@ -1,6 +1,6 @@
-"""Канал @aegis_samara: события подписки/отписки, кнопка «✅ Я подписался — проверить», бонусы за друзей.
+"""Канал @aegis_samara: события подписки/отписки, кнопка «✅ Я подписался - проверить», бонусы за друзей.
 
-Бот должен быть администратором канала — иначе Telegram не присылает события и не даёт проверить подписку.
+Бот должен быть администратором канала - иначе Telegram не присылает события и не даёт проверить подписку.
 """
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ def channel_promo(user: User, s: RuntimeSettings) -> tuple[str, list[list[Inline
         return texts.CHANNEL_PROMO.format(channel=channel, bonus=fmt_rub(int(s.channel_bonus))), channel_buttons(s)
     if user.channel_bonus_at is not None and user.channel_bonus_revoked_at is None:
         return texts.CHANNEL_PROMO_DONE.format(channel=channel), channel_buttons(s, check=False)
-    return f"📢 Наш канал {channel} — разборы, лайфхаки к сессии и акции.", channel_buttons(s, check=False)
+    return f"📢 Наш канал {channel}: разборы, лайфхаки к сессии и акции.", channel_buttons(s, check=False)
 
 
 # ------------------------------------------------------------------ уведомления
@@ -101,7 +101,7 @@ async def alert_check_failed(bot: Bot, config: Config, s: RuntimeSettings) -> No
     if ch.should_alert(now_utc()):
         await notify_admins(bot, config, (
             f"⚠️ Не получается проверить подписку на {html.escape(s.channel)}: {html.escape(ch.health.error or '')}\n"
-            "Сделайте бота администратором канала (достаточно минимальных прав) — иначе бонусы за подписку "
+            "Сделайте бота администратором канала (достаточно минимальных прав): иначе бонусы за подписку "
             "не начисляются. Канал меняется в «⚙️ Настройки» → «📢 Канал и бонусы за подписку»."), min_level=2)
 
 
@@ -109,7 +109,7 @@ async def joined(bot: Bot, session: AsyncSession, s: RuntimeSettings, user_id: i
                  checker_fresh: bool = True) -> ch.JoinResult | None:
     """Подписка подтверждена: бонус себе, отметка у друга-пригласившего, выдача ждущих бонусов за друзей."""
     if await session.get(User, user_id) is None:
-        return None  # подписался на канал, но ботом ещё не пользовался — бонус получит по кнопке «проверить»
+        return None  # подписался на канал, но ботом ещё не пользовался - бонус получит по кнопке «проверить»
     now = now_utc()
     async with app_lock():
         res = await ch.on_member(session, user_id, s, now)
@@ -157,15 +157,15 @@ async def bot_rights_changed(event: ChatMemberUpdated, s: RuntimeSettings, bot: 
     status = str(getattr(event.new_chat_member.status, "value", event.new_chat_member.status))
     if status == "administrator":
         ch.health.error = None
-        text = (f"✅ Бот теперь администратор канала {html.escape(s.channel)} — подписки проверяются, "
+        text = (f"✅ Бот теперь администратор канала {html.escape(s.channel)}: подписки проверяются, "
                 "бонусы начисляются автоматически.")
     else:
-        text = (f"⚠️ Бот больше не администратор канала {html.escape(s.channel)} — проверка подписки и бонусы "
+        text = (f"⚠️ Бот больше не администратор канала {html.escape(s.channel)}: проверка подписки и бонусы "
                 "за неё не работают. Верните боту права администратора.")
     await notify_admins(bot, config, text, min_level=2)
 
 
-# ------------------------------------------------------------------ «✅ Я подписался — проверить»
+# ------------------------------------------------------------------ «✅ Я подписался - проверить»
 @router.callback_query(MenuCb.filter(F.action == "ch_check"))
 async def cb_check(call: CallbackQuery, session: AsyncSession, s: RuntimeSettings, bot: Bot, config: Config,
                    db_user: User) -> None:
@@ -193,7 +193,7 @@ async def cb_check(call: CallbackQuery, session: AsyncSession, s: RuntimeSetting
     elif res.already_at is not None:
         await call.answer(texts.CHANNEL_ALREADY.format(date=fmt_date(res.already_at)), show_alert=True)
     else:
-        await call.answer("✅ Подписка есть — спасибо, что с нами!", show_alert=True)
+        await call.answer("✅ Подписка есть: спасибо, что с нами!", show_alert=True)
     if call.message is not None and call.message.reply_markup is not None:
         rows = [row for row in call.message.reply_markup.inline_keyboard
                 if not any(b.callback_data == MenuCb(action="ch_check").pack() for b in row)]

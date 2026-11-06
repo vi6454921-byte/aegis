@@ -64,7 +64,8 @@ async def run_scenario(h: Harness, web: TestClient, config: Config,
     """Проходит шаги 1–8 и проверяет БД, сообщения, веб и CSV. Возвращает id заказа."""
     h.user(A1, "Аня")
     h.user(A2, "Борис")
-    await set_settings(sessionmaker, referral_bonus=5000)  # по умолчанию 0: основной бонус — за подписку на канал
+    await set_settings(sessionmaker, referral_bonus=5000,  # по умолчанию 0: основной бонус — за подписку на канал
+                       notes_discount_nach=True)  # v2.4: скидки за конспекты по умолчанию выключены, тут проверяем их
 
     # ---- 0. Аккаунт 1 запускает бота и берёт свою реф-ссылку
     await h.send(A1, "/start")
@@ -75,7 +76,7 @@ async def run_scenario(h: Harness, web: TestClient, config: Config,
     # ---- 1. Аккаунт 2 заходит по реф-ссылке → в приветствии подарки: три ссылки прямо в тексте, без кнопок
     await h.send(A2, f"/start {ref}")
     assert texts.REF_NEW_FRIEND in h.texts(A1)
-    welcome, welcome_kb = next((m, kb) for m, kb in h.screen(A2) if (m.text or "").startswith("Привет!"))
+    welcome, welcome_kb = next((m, kb) for m, kb in h.screen(A2) if "Привет! Это Аегис" in (m.text or ""))
     assert gift_hrefs(welcome.text) == list(GIFT_URLS)
     assert welcome_kb is None  # ни кнопок, ни Mini App, ни файлов
     assert not h.sent_documents(A2)
@@ -99,7 +100,7 @@ async def run_scenario(h: Harness, web: TestClient, config: Config,
     await h.click(A2, "✅ Готово")
     await h.click(A2, "⏭ Без комментария")
     summary = h.last_text(A2)
-    assert "Конспекты: лекция — 1 фото, практика — 1 фото" in summary
+    assert "Конспекты. Лекция: 1 фото, практика: 1 фото" in summary
     assert f"<b>{fmt_rub(20000)}</b>" in summary and f"<b>{fmt_rub(10000)}</b>" in summary
     await h.click(A2, texts.SUBMIT_BTN)
     await h.click(A2, texts.TERMS_ACCEPT_BTN)  # первый заказ — сначала принять условия
@@ -127,7 +128,7 @@ async def run_scenario(h: Harness, web: TestClient, config: Config,
     order = await get(sessionmaker, Order, oid)
     assert order.status == "awaiting_payment" and order.price_final == 10000
     assert (order.lecture_status, order.practice_status) == ("approved", "approved")
-    assert any(t.startswith(f"💳 Заказ #{oid} проверен. К оплате: <b>{fmt_rub(10000)}</b>") for t in h.texts(A2))
+    assert any(t.startswith(f"💳 <b>Заказ #{oid} проверен</b>\n\nК оплате: <b>{fmt_rub(10000)}</b>") for t in h.texts(A2))
 
     # ---- 4. Аккаунт 2 оплачивает тестовыми деньгами
     await h.click(A2, f"{texts.PAY_BTN} · {fmt_rub(10000)}")
@@ -146,11 +147,11 @@ async def run_scenario(h: Harness, web: TestClient, config: Config,
     assert texts.ORDER_TAKEN.format(id=oid) in h.texts(A2)
     await h.click(A1, "📤 Загрузить решение")
     await h.send(A1, document=("sol-1", "solution.html", SOLUTION))
-    assert h.last_text(A1).startswith("Получено файлов: 1 — solution.html")
+    assert h.last_text(A1).startswith("Получено файлов: 1 (solution.html)")
     await h.click(A1, "💾 Сохранить (1)")
-    await h.click(A1, "📦 Готово — отправить клиенту")
+    await h.click(A1, "📦 Готово, отправить клиенту")
     assert texts.ORDER_DONE.format(id=oid) in h.texts(A2)
-    assert any(t.startswith(f"🎉 Твой друг получил первый оплаченный заказ — тебе +{fmt_rub(5000)}")
+    assert any(t.startswith(f"🎉 Твой друг получил первый оплаченный заказ! Тебе <b>+{fmt_rub(5000)}</b>")
                for t in h.texts(A1))
     assert f"начислено +{fmt_rub(5000)} бонусами" in h.last_text(A1)
     order = await get(sessionmaker, Order, oid)
@@ -179,7 +180,7 @@ async def run_scenario(h: Harness, web: TestClient, config: Config,
     await h.click(A1, "↩️ Вернуть деньги")  # кнопка под уведомлением о споре (у админа 2 уровня)
     assert f"Бонус пригласившему ({fmt_rub(5000)}) будет отозван" in h.last_text(A1)
     await h.click(A1, "↩️ На баланс")
-    assert texts.REFUNDED.format(id=oid, details=f"{fmt_rub(10000)} — на рублёвый баланс") in h.texts(A2)
+    assert texts.REFUNDED.format(id=oid, details=f"{fmt_rub(10000)} на рублёвый баланс") in h.texts(A2)
     assert texts.REF_REVOKED.format(amount=fmt_rub(5000)) in h.texts(A1)
     order = await get(sessionmaker, Order, oid)
     friend = await get(sessionmaker, User, A2)
@@ -263,6 +264,11 @@ async def start_with_referral(h: Harness, referrer: int, friend: int) -> None:
     await h.send(friend, f"/start {ref}")
 
 
+def _has_button(h: Harness, uid: int, label: str) -> bool:
+    _, markup = h.screen(uid)[-1]
+    return bool(markup) and any(b.text == label for row in markup.inline_keyboard for b in row)
+
+
 async def wizard_order(h: Harness, uid: int, *, notes: bool, days: int = 4) -> int:
     """Оформляет заказ по начерталке на 1 задачу через мастер. Возвращает id заказа."""
     await h.send(uid, texts.MAIN_MENU["order"])
@@ -275,10 +281,10 @@ async def wizard_order(h: Harness, uid: int, *, notes: bool, days: int = 4) -> i
     day = local_today() + timedelta(days=days)
     await h.click(uid, f"{WEEKDAYS[day.weekday()]} {day:%d.%m}")
     for kind in ("lecture", "practice"):
-        if notes:
+        if notes:  # шаги конспектов есть, только если скидка включена в настройках (v2.4: по умолчанию нет)
             await h.send(uid, photo=f"{kind}-{uid}-{next(_n)}")
             await h.click(uid, "✅ Готово")
-        else:
+        elif _has_button(h, uid, texts.BTN_SKIP):
             await h.click(uid, texts.BTN_SKIP)
     await h.click(uid, "⏭ Без комментария")
     await h.click(uid, texts.SUBMIT_BTN)
@@ -311,4 +317,4 @@ async def admin_deliver(h: Harness, oid: int, content: bytes = SOLUTION) -> None
     await h.click(A1, "🛠 Взять в работу")
     await h.click(A1, "📤 Загрузить решение")
     await upload_solution(h, content)
-    await h.click(A1, "📦 Готово — отправить клиенту")
+    await h.click(A1, "📦 Готово, отправить клиенту")

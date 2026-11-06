@@ -12,5 +12,4 @@ venv/
 .DS_Store
 
 # v2.3: промокоды — секрет, в git и в docker-образ не кладём
-promo_codes.txt
-promo_codes_new.txt
+promo_codes*.txt

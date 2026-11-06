@@ -1,7 +1,7 @@
 """Промокод на безлимит у клиента: «🎟 Ввести промокод» (главное меню и «🎁 Бонусы и акции»), команда
 /promo [КОД] и просто код сообщением (AEGIS-XXXX-XXXX) вне сценариев.
 
-Сама проверка — app.services.promocodes.activate: один код — один аккаунт (атомарно), не больше 5 неверных
+Сама проверка - app.services.promocodes.activate: один код - один аккаунт (атомарно), не больше 5 неверных
 попыток в час, код «на 30 дней» не продлевает действующий безлимит, «навсегда» заменяет 30-дневный."""
 from __future__ import annotations
 
@@ -28,18 +28,18 @@ from app.utils.timeutil import full_date, now_utc, to_local
 
 router = Router(name="promocodes")
 M = texts.MAIN_MENU
-_SEP = re.compile(r"[\s\-–—_.]+")
+_SEP = re.compile(r"[\s\-\u2013\u2014_.]+")
 
 
 def plain_code(text: str | None) -> bool:
-    """Вне сценариев кодом считаем только «AEGIS…» или «XXXX-XXXX» — чтобы обычное слово не стало попыткой."""
+    """Вне сценариев кодом считаем только «AEGIS…» или «XXXX-XXXX» - чтобы обычное слово не стало попыткой."""
     t = (text or "").strip()
     if not t or len(t) > 40 or "\n" in t:
         return False
     compact = _SEP.sub("", t)
     if t.upper().startswith("AEGIS"):
         return compact.isascii() and compact.isalnum() and len(compact) >= 9
-    return bool(re.fullmatch(r"[A-Za-z0-9]{4}[\-–—][A-Za-z0-9]{4}", t)) and pc.looks_like_code(t)
+    return bool(re.fullmatch(r"[A-Za-z0-9]{4}[\-\u2013\u2014][A-Za-z0-9]{4}", t)) and pc.looks_like_code(t)
 
 
 async def ask_code(message: Message, state: FSMContext) -> None:
@@ -62,7 +62,7 @@ async def activate_and_reply(message: Message, session: AsyncSession, user: User
             text += texts.PROMO_OK_PAID.format(ids=", ".join(f"#{i}" for i in res.paid_orders))
         await message.answer(text, reply_markup=main_menu())
         fresh = await session.get(User, user.id, populate_existing=True)
-        for oid in res.paid_orders or []:  # заказ, ждавший оплаты, теперь в очереди — сообщаем команде
+        for oid in res.paid_orders or []:  # заказ, ждавший оплаты, теперь в очереди - сообщаем команде
             await mark_headers(bot, session, config, "order", oid,
                                texts.ADMIN_PROMO_MARK.format(time=f"{to_local(now):%H:%M}"),
                                markup_for=lambda _lvl, o=oid: order_alert_kb(o))
@@ -140,5 +140,5 @@ async def code_input(message: Message, state: FSMContext, session: AsyncSession,
 
 @router.message(StateFilter(None), F.text.func(plain_code))
 async def code_plain(message: Message, session: AsyncSession, db_user: User, bot: Bot, config: Config) -> None:
-    """Прислал код просто сообщением — активируем без лишних кнопок."""
+    """Прислал код просто сообщением - активируем без лишних кнопок."""
     await activate_and_reply(message, session, db_user, message.text, bot, config)

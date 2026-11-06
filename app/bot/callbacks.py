@@ -6,7 +6,7 @@ class MenuCb(CallbackData, prefix="m"):
 
 
 class GiftCb(CallbackData, prefix="g"):
-    """Кнопки подарков из старых сообщений (до v2.1). Новые не создаются — подарки теперь ссылки в тексте."""
+    """Кнопки подарков из старых сообщений (до v2.1). Новые не создаются - подарки теперь ссылки в тексте."""
     gift: str
 
 
@@ -16,7 +16,7 @@ class GuideCb(CallbackData, prefix="t"):
 
 
 class SupCb(CallbackData, prefix="h"):
-    """Клиент: ответить поддержке (id обращения; 0 — новое) или написать по заказу."""
+    """Клиент: ответить поддержке (id обращения; 0 - новое) или написать по заказу."""
     action: str  # reply | order
     id: int = 0
 
@@ -53,11 +53,18 @@ class PromoCb(CallbackData, prefix="pr"):
 
 
 class StrayCb(CallbackData, prefix="sy"):
-    """v2.3: «Это задание?» — сообщение вне оформления заказа и поддержки."""
+    """v2.3: «Это задание?» - сообщение вне оформления заказа и поддержки."""
     action: str  # order | support
     id: int = 0
 
 
 class CodeCb(CallbackData, prefix="pc"):
-    """v2.3: пользователь — ввести промокод на безлимит."""
+    """v2.3: пользователь - ввести промокод на безлимит."""
     action: str  # enter | cancel
+
+
+class DesignCb(CallbackData, prefix="dz"):
+    """v2.4: «🎨 Файлы и дизайн»."""
+    a: str  # open | kind | style | fmt | lang | qty | done | clear | back | pay | edit | cancel | terms | accept | redo | redo_end
+    v: str = ""
+    id: int = 0

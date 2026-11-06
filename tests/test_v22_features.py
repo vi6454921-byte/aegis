@@ -327,7 +327,7 @@ async def test_give_and_take_money_by_username_or_id(e2e, config, sessionmaker) 
 
     # по ID, с копейками и комментарием в той же строке — клиент видит комментарий
     await h.send(A1, "/give 2002 99,90 за решение")
-    assert "Комментарий: «за решение» — клиент его увидит." in h.last_text(A1)
+    assert "Комментарий: «за решение», клиент его увидит." in h.last_text(A1)
     await h.click(A1, confirm)
     assert await balance(sessionmaker, A2) == 59990
     assert h.last_text(A2) == texts.GIVE_USER_IN.format(amount=fmt_rub(9990)) + "\n💬 за решение"
@@ -405,7 +405,7 @@ async def test_give_and_take_money_by_username_or_id(e2e, config, sessionmaker) 
     # клиент не видит комментарий, если так в настройках
     await set_settings(sessionmaker, admin_give_show_comment=False)
     await h.send(A1, "/give @user2002 1 секретно")
-    assert "— только в журнале." in h.last_text(A1)
+    assert ", только в журнале." in h.last_text(A1)
     await h.click(A1, confirm)
     assert h.last_text(A2) == texts.GIVE_USER_IN.format(amount=fmt_rub(100))
 
@@ -717,7 +717,7 @@ async def test_post_task_reward_views_and_duplicates(e2e, config, sessionmaker) 
     # 1 уровень принимает пост → +200 ₽ на рубли, у другого админа карточка помечена
     await h.click(A3, texts.TASK_ACCEPT_BTN)
     assert await balance(sessionmaker, A2) == 20000
-    assert h.last_text(A2).startswith(f"🎉 Пост принят — <b>+{fmt_rub(20000)}</b>")
+    assert h.last_text(A2).startswith(f"🎉 Пост принят: <b>+{fmt_rub(20000)}</b>")
     card, buttons = card_of(h, A1, POST_CARD)
     assert f"✅ Пост принят, +{fmt_rub(20000)}: Вера" in card.text and texts.TASK_ACCEPT_BTN not in buttons
     await press_data(h, A1, AdminCb(s="pt", a="rp_ok", id=1))

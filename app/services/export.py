@@ -44,11 +44,30 @@ async def export_csv(session: AsyncSession, out_dir: Path) -> list[Path]:
 
 
 # ------------------------------------------------------------------ Excel: пользователи и покупки
-SUBJECT_NAMES = {"nach": "Начерталка", "calc": "Расчётка по вышмату", "explain": "Объяснение материала"}
-STATUS_NAMES = {"review": "на проверке", "awaiting_payment": "ждёт оплаты", "paid": "оплачен", "in_work": "в работе",
+SUBJECT_NAMES = {"nach": "Начерталка", "calc": "Расчётка по вышмату", "explain": "Объяснение материала",
+                 "any": "Любая задача", "design": "Файлы и дизайн"}
+
+
+def _what(o: Order) -> str:
+    """«Начерталка»; у «Файлов и дизайна» ещё тип, оформление и количество."""
+    name = SUBJECT_NAMES.get(o.subject or "", o.subject or "")
+    if o.subject == "design":
+        from app.services.design import describe_plain  # noqa: PLC0415
+
+        return f"{name}: {describe_plain(o)}"
+    return name
+
+
+STATUS_NAMES = {"estimate": "ждёт оценки", "quoted": "оценено", "review": "на проверке", "awaiting_payment": "ждёт оплаты", "paid": "оплачен", "in_work": "в работе",
                 "done": "готово", "accepted": "зачтено", "dispute": "спор", "refunded": "возврат",
                 "rejected": "отклонён", "cancelled": "отменён"}
 CHANNEL_NAMES = {"member": "подписан", "left": "не подписан"}
+
+
+def _status(o: Order) -> str:
+    if o.subject == "design" and o.status == "accepted":  # v2.4: файл принят, а не «зачтено»
+        return "принято"
+    return STATUS_NAMES.get(o.status, o.status)
 
 
 def _rub(kop: int | None) -> float:
@@ -60,7 +79,7 @@ def _dt(value: datetime | None) -> datetime | None:
 
 
 async def users_report(session: AsyncSession) -> dict[str, tuple[list[str], list[list]]]:
-    """Три листа: пользователи, покупки (оплаченные заказы), пополнения. Деньги — в рублях."""
+    """Три листа: пользователи, покупки (оплаченные заказы), пополнения. Деньги - в рублях."""
     users = list((await session.execute(select(User).order_by(User.created_at, User.id))).scalars())
     by_id = {u.id: u for u in users}
     orders = list((await session.execute(select(Order).where(Order.paid_at.is_not(None))
@@ -73,7 +92,7 @@ async def users_report(session: AsyncSession) -> dict[str, tuple[list[str], list
         st["n"] += 1
         st["rub"] += (o.paid_balance or 0) + (o.paid_invoice or 0)
         st["bonus"] += o.paid_bonus or 0
-        st["last"], st["what"] = o.paid_at, f"#{o.id} {SUBJECT_NAMES.get(o.subject or '', o.subject or '')}"
+        st["last"], st["what"] = o.paid_at, f"#{o.id} {_what(o)}"
     n_orders = dict((await session.execute(select(Order.user_id, func.count(Order.id))
                                            .where(Order.status != "draft").group_by(Order.user_id))).all())
 
@@ -99,9 +118,9 @@ async def users_report(session: AsyncSession) -> dict[str, tuple[list[str], list
         u = by_id.get(o.user_id)
         o_rows.append([i, _dt(o.paid_at), o.id, o.user_id, f"@{u.username}" if u and u.username else "",
                        u.first_name if u and u.first_name else "", (u.phone if u else "") or "",
-                       SUBJECT_NAMES.get(o.subject or "", o.subject or ""), o.task_count or 0, _dt(o.deadline_at),
+                       _what(o), o.task_count or 0, _dt(o.deadline_at),
                        _rub(o.price_final), _rub(o.paid_bonus), _rub(o.paid_balance), _rub(o.paid_invoice),
-                       STATUS_NAMES.get(o.status, o.status), "да" if o.is_test else ""])
+                       _status(o), "да" if o.is_test else ""])
     t_head = ["№", "Дата", "ID клиента", "Username", "Телефон", "Сумма, ₽", "Бонус к пополнению, ₽", "Способ", "Тест"]
     t_rows = []
     for i, p in enumerate(topups, 1):
@@ -113,7 +132,7 @@ async def users_report(session: AsyncSession) -> dict[str, tuple[list[str], list
 
 
 async def export_users_xlsx(session: AsyncSession, out_dir: Path) -> Path:
-    """Excel-файл (openpyxl). Если библиотеки нет — CSV того же содержания (лист «Пользователи»)."""
+    """Excel-файл (openpyxl). Если библиотеки нет - CSV того же содержания (лист «Пользователи»)."""
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = f"{to_local(now_utc()):%Y%m%d-%H%M%S}"
     report = await users_report(session)

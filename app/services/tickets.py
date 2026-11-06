@@ -1,6 +1,6 @@
 """Обращения в поддержку: вопросы, оплата, вопросы по заказу, обжалование бана.
 
-Переписка с клиентом идёт через бота: клиент пишет — админам приходит уведомление с кнопками
+Переписка с клиентом идёт через бота: клиент пишет - админам приходит уведомление с кнопками
 («✉️ Ответить», «✅ Закрыть»), админ отвечает кнопкой или просто свайпом-ответом на уведомление.
 Сообщения клиента в течение THREAD_WINDOW склеиваются в одно обращение.
 """
@@ -38,7 +38,7 @@ async def open_or_append(session: AsyncSession, user_id: int, kind: str, now: da
                          order_id: int | None = None) -> tuple[Ticket, bool]:
     """Находит незакрытое свежее обращение того же типа или создаёт новое. (обращение, создано ли).
 
-    v2.3: переписка по заказу — одна на заказ, без окна и независимо от «закрыто»: все сообщения админов
+    v2.3: переписка по заказу - одна на заказ, без окна и независимо от «закрыто»: все сообщения админов
     и клиента по заказу №N складываются в одну ветку (её видно в карточке заказа)."""
     if kind == "order" and order_id:
         q = select(Ticket).where(Ticket.user_id == user_id, Ticket.kind == "order", Ticket.order_id == order_id)
@@ -73,7 +73,7 @@ def add_in(session: AsyncSession, ticket: Ticket, content_type: str, text: str |
 
 def add_out(session: AsyncSession, ticket: Ticket, admin_id: int, content_type: str, text: str | None,
             user_msg_id: int | None, now: datetime) -> TicketMessage:
-    """Ответ админа (user_msg_id — id доставленного сообщения в чате клиента). Без commit."""
+    """Ответ админа (user_msg_id - id доставленного сообщения в чате клиента). Без commit."""
     ticket.status = "answered"
     ticket.answered_by = admin_id
     ticket.answered_at = now
@@ -93,7 +93,7 @@ async def close(session: AsyncSession, ticket: Ticket, admin_id: int, now: datet
 
 
 async def by_user_reply(session: AsyncSession, user_id: int, replied_msg_id: int) -> Ticket | None:
-    """Клиент ответил (свайпом) на сообщение поддержки — находим обращение."""
+    """Клиент ответил (свайпом) на сообщение поддержки - находим обращение."""
     return await session.scalar(select(Ticket).join(TicketMessage, TicketMessage.ticket_id == Ticket.id)
                                 .where(Ticket.user_id == user_id, TicketMessage.direction == "out",
                                        TicketMessage.user_msg_id == replied_msg_id).limit(1))
@@ -107,7 +107,7 @@ async def messages(session: AsyncSession, ticket_id: int, limit: int = 12) -> li
 
 async def order_thread(session: AsyncSession, order_id: int, limit: int = 50) -> tuple[list[TicketMessage], int]:
     """Вся переписка по заказу (все его обращения): последние limit сообщений по порядку и сколько их всего.
-    Заголовки альбомов (content_type=album) не считаем — сами фото альбома записаны отдельно."""
+    Заголовки альбомов (content_type=album) не считаем - сами фото альбома записаны отдельно."""
     base = (select(TicketMessage).join(Ticket, Ticket.id == TicketMessage.ticket_id)
             .where(Ticket.order_id == order_id, TicketMessage.content_type != "album"))
     total = int(await session.scalar(select(func.count()).select_from(base.subquery())) or 0)

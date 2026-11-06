@@ -217,7 +217,7 @@ async def test_admin_levels_invites_permissions_and_removal(e2e, config, session
     await h.click(A3, "📤 Загрузить решение")
     await h.send(A3, document=("sol-l1", "solution.html", b"<html><body>ok</body></html>"))
     await h.click(A3, "💾 Сохранить (1)")
-    await h.click(A3, "📦 Готово — отправить клиенту")
+    await h.click(A3, "📦 Готово, отправить клиенту")
     assert texts.ORDER_DONE.format(id=oid) in h.texts(A2)
     await h.click(A2, texts.DISPUTE_BTN)
     await h.send(A2, photo="remark-l1")
@@ -362,7 +362,7 @@ async def test_tutorial_onboarding(e2e, config, sessionmaker) -> None:
     assert "@aegis_samara" in h.last_text(A2) and fmt_rub(5000) in h.last_text(A2)
     await h.click(A2, texts.GUIDE_PREV)
     page4 = h.last_text(A2)
-    assert "· 4/5" in page4 and "×1,5" in page4 and "×2,0" in page4 and "За 2+ дня до дедлайна — без наценки" in page4
+    assert "· 4/5" in page4 and "×1,5" in page4 and "×2,0" in page4 and "За 2+ дня до дедлайна: без наценки" in page4
     await h.click(A2, texts.GUIDE_SKIP)
     assert h.last_text(A2) == texts.GUIDE_FINISHED
     assert (await get(sessionmaker, User, A2)).tutorial_done_at is not None
@@ -392,20 +392,20 @@ async def test_channel_bonus_referral_and_anti_abuse(e2e, config, sessionmaker) 
 
     # друг подписался → ему +50 сразу; пригласившему — после 48 ч удержания и только если он сам подписан
     await h.channel(A2, True)
-    assert h.last_text(A2).startswith(f"🎉 Спасибо за подписку на @aegis_samara! Тебе <b>+{R50} бонусами</b>")
+    assert h.last_text(A2).startswith(f"🎉 <b>Спасибо за подписку на @aegis_samara!</b>\n\nТебе <b>+{R50} бонусами</b>")
     assert (await get(sessionmaker, User, A2)).balance_bonus == 5000
     assert h.last_text(A1).startswith(f"👥 Твой друг Борис подписался на канал! Чтобы получить +{R50}")
     await h.click(A1, texts.CHANNEL_CHECK_BTN)  # ещё не подписан
     assert h.alerts()[-1] == texts.CHANNEL_NOT_MEMBER.format(channel="@aegis_samara")
     await h.channel(A1, True)
-    assert h.last_text(A1).startswith("🎉 Спасибо за подписку на @aegis_samara!")
+    assert h.last_text(A1).startswith("🎉 <b>Спасибо за подписку на @aegis_samara!</b>")
     await press_data(h, A2, MenuCb(action="ch_check"))  # старая кнопка «проверить» — без второго бонуса
     assert h.alerts()[-1].startswith("✅ Подписка есть, бонус за неё уже начислен")
     assert (await get(sessionmaker, User, A2)).balance_bonus == 5000
 
     later = now_utc() + timedelta(hours=49)
     assert await scheduler.channel_watch(h.bot, sessionmaker, now=later) == 1
-    assert h.last_text(A1).startswith(f"🎉 +{R50} бонусами за друга Борис — он подписан на канал.")
+    assert h.last_text(A1).startswith(f"🎉 +{R50} бонусами за друга Борис: он подписан на канал.")
     assert await scheduler.channel_watch(h.bot, sessionmaker, now=later + timedelta(minutes=15)) == 0
     assert (await get(sessionmaker, User, A1)).balance_bonus == 10000
 
@@ -485,7 +485,7 @@ async def test_manual_transfer_reject_then_confirm_by_operator(e2e, config, sess
     await h.send(A2, "вот")  # не файл — подсказка, ждём чек дальше
     assert "Отправить без чека" in h.last_text(A2)
     await h.send(A2, photo="receipt-1")
-    assert h.last_text(A2).startswith("✅ Спасибо! Чек получили")
+    assert h.last_text(A2).startswith("✅ <b>Спасибо! Чек получили</b>")
     for admin in (A1, A3):  # чек — у всех админов, и у 1 уровня тоже
         _, buttons = message_with(h, admin, "🧾 Чек об оплате · счёт №")
         assert buttons[:2] == ["✅ Оплата пришла", "❌ Не пришла"]
@@ -507,7 +507,7 @@ async def test_manual_transfer_reject_then_confirm_by_operator(e2e, config, sess
     await h.click(A2, f"{texts.PAY_BTN} · {fmt_rub(20000)}")  # оплатил снова, без чека
     await h.click(A2, texts.MANUAL_CLAIM_BTN)
     await h.click(A2, texts.MANUAL_NO_RECEIPT_BTN)
-    assert h.last_text(A2).startswith("✅ Спасибо! Чек получили")
+    assert h.last_text(A2).startswith("✅ <b>Спасибо! Чек получили</b>")
     _, buttons = message_with(h, A3, "🧾 Чек об оплате · счёт №")
     await h.click(A3, "✅ Оплата пришла")
     await h.click(A3, "✅ Да, деньги пришли")
@@ -573,6 +573,7 @@ async def test_phone_and_users_excel(e2e, config, sessionmaker) -> None:
 # ---------------------------------------------------------------- 9. наценка за срочность — в кнопках и итоге
 async def test_urgency_hints_follow_settings(e2e, config, sessionmaker) -> None:
     h, _ = e2e
+    await set_settings(sessionmaker, urgency_nach=True)  # v2.4: по умолчанию у начерталки наценки нет, включаем
     h.user(A1, "Аня")
     h.user(A2, "Борис")
     await h.send(A1, "/start")
@@ -591,14 +592,12 @@ async def test_urgency_hints_follow_settings(e2e, config, sessionmaker) -> None:
 
     await to_deadline_step()
     step = h.last_text(A2)
-    assert "⏰ За 2+ дня до дедлайна — без наценки" in step and "⚡ За 1–2 дня — ×1,5" in step
-    assert "🔥 Меньше суток — ×2,0" in step
+    assert "⏰ За 2+ дня до дедлайна: без наценки" in step and "⚡ За 1-2 дня: ×1,5" in step
+    assert "🔥 Меньше суток: ×2,0" in step
     kb = last_kb_labels(h, A2)
     assert "Завтра · ×1,5" in kb and "Через 2 дня · без наценки" in kb and "Через 3+ дня · без наценки" in kb
     assert all(x == "Сегодня · ×2,0" for x in kb if x.startswith("Сегодня"))  # поздно вечером «Сегодня» нет
-    await h.click(A2, "Завтра")
-    await h.click(A2, texts.BTN_SKIP)
-    await h.click(A2, texts.BTN_SKIP)
+    await h.click(A2, "Завтра")  # v2.4: шагов конспектов нет (скидки выключены)
     await h.click(A2, "⏭ Без комментария")
     summary = h.last_text(A2)
     assert f"срочность ×1,5 = <b>{fmt_rub(30000)}</b>" in summary
@@ -616,13 +615,13 @@ async def test_urgency_hints_follow_settings(e2e, config, sessionmaker) -> None:
     await set_settings(sessionmaker, urgency_lt24_pct=180)
     await to_deadline_step()
     step = h.last_text(A2)
-    assert "⏰ За 3+ дня до дедлайна — без наценки" in step and "⚡ За 1–3 дня — ×1,3" in step
-    assert "🔥 Меньше суток — ×1,8" in step
+    assert "⏰ За 3+ дня до дедлайна: без наценки" in step and "⚡ За 1-3 дня: ×1,3" in step
+    assert "🔥 Меньше суток: ×1,8" in step
     kb = last_kb_labels(h, A2)
     assert "Завтра · ×1,3" in kb and "Через 2 дня · ×1,3" in kb
     await h.send(A2, texts.MAIN_MENU["help"])
     await h.click(A2, "⏰ Сроки и цены")
-    assert "⚡ За 1–3 дня — ×1,3" in h.last_text(A2)
+    assert "⚡ За 1-3 дня: ×1,3" in h.last_text(A2)
 
     # неправильные пороги не сохраняются
     await h.click(A1, "Максимальная наценка, если меньше")

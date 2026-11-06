@@ -1,7 +1,7 @@
 """Первый администратор без ручной правки .env.
 
 Если ADMIN_IDS пуст, при запуске бот печатает в консоль одноразовый код. Владелец отправляет боту
-«/admin КОД» — и становится админом. Его id сохраняется в базе (таблица settings) и, если рядом лежит
+«/admin КОД» - и становится админом. Его id сохраняется в базе (таблица settings) и, если рядом лежит
 .env, вписывается в строку ADMIN_IDS. Когда ADMIN_IDS в .env задан, сохранённый в базе не используется.
 Код живёт до перезапуска; после MAX_FAILURES неверных попыток выдаётся новый (перебор бесполезен).
 """
@@ -54,7 +54,7 @@ class OwnerClaim:
         return code
 
     def check(self, attempt: str | None) -> bool:
-        """True — код верный (и больше не действует). Пустая попытка ошибкой не считается."""
+        """True - код верный (и больше не действует). Пустая попытка ошибкой не считается."""
         if self.code is None or not attempt or not attempt.strip():
             return False
         if secrets.compare_digest(attempt.strip().encode(), self.code.encode()):
@@ -62,7 +62,7 @@ class OwnerClaim:
             return True
         self.failures += 1
         if self.failures >= MAX_FAILURES:
-            log.warning("много неверных попыток /admin КОД — старый код больше не действует, новый:%s",
+            log.warning("много неверных попыток /admin КОД: старый код больше не действует, новый:%s",
                         banner(self.start(), self.username))
         return False
 
@@ -82,7 +82,7 @@ async def load_saved(session: AsyncSession) -> set[int]:
 
 
 async def restore_saved(session: AsyncSession, config: Config) -> set[int]:
-    """При пустом ADMIN_IDS — подхватить админа, назначенного кодом в прошлый раз."""
+    """При пустом ADMIN_IDS - подхватить админа, назначенного кодом в прошлый раз."""
     if config.admin_ids:
         return set()
     saved = await load_saved(session)
@@ -93,7 +93,7 @@ async def restore_saved(session: AsyncSession, config: Config) -> set[int]:
 
 async def grant(session: AsyncSession, config: Config, user_id: int) -> None:
     ids = config.admin_ids | {user_id}
-    config.admin_ids_raw = ids_text(ids)  # проверки доступа читают config.admin_ids — действует сразу
+    config.admin_ids_raw = ids_text(ids)  # проверки доступа читают config.admin_ids - действует сразу
     row = await session.get(Setting, SETTING_KEY)
     raw = json.dumps(sorted(ids))
     if row is None:
@@ -106,7 +106,7 @@ async def grant(session: AsyncSession, config: Config, user_id: int) -> None:
 
 
 def save_to_env(ids: set[int], path: Path | None = None) -> bool:
-    """Вписать ADMIN_IDS в .env (если файл есть — в Docker его внутри контейнера нет, там хватает базы)."""
+    """Вписать ADMIN_IDS в .env (если файл есть - в Docker его внутри контейнера нет, там хватает базы)."""
     path = ENV_FILE if path is None else path
     if not path.is_file():
         return False
@@ -118,6 +118,6 @@ def save_to_env(ids: set[int], path: Path | None = None) -> bool:
             new = text.rstrip("\r\n") + "\n" + line + "\n"
         path.write_text(new, encoding="utf-8")
     except OSError as e:
-        log.warning("не удалось записать ADMIN_IDS в %s (%s) — админ сохранён в базе", path, e)
+        log.warning("не удалось записать ADMIN_IDS в %s (%s): админ сохранён в базе", path, e)
         return False
     return True

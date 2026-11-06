@@ -1,16 +1,19 @@
 """Промокоды на безлимит (v2.3).
 
-Безлимит — все заказы бесплатно (решение и «📸 Объяснить материал»): счёт не выставляется, после проверки
-админом заказ сразу встаёт в очередь как оплаченный (способ — «Промокод», 0 ₽). Деньги и бонусы не тратятся.
+Кодов в репозитории нет (v2.4): их выпускает только админ 2 уровня в боте (🔐 Управление → 🎟 Промокоды),
+файл с кодами приходит ему в чат. Файлы promo_codes*.txt в git и docker-образ не попадают.
 
-Код — одноразовый: после активации он навсегда привязан к одному аккаунту. Формат AEGIS-XXXX-XXXX, алфавит
+Безлимит - все заказы бесплатно (решение и «📸 Объяснить материал»): счёт не выставляется, после проверки
+админом заказ сразу встаёт в очередь как оплаченный (способ - «Промокод», 0 ₽). Деньги и бонусы не тратятся.
+
+Код - одноразовый: после активации он навсегда привязан к одному аккаунту. Формат AEGIS-XXXX-XXXX, алфавит
 без похожих символов (нет 0/O/1/I/L). Ввод не зависит от регистра, пробелов и дефисов, префикс можно не писать.
 
 Один безлимит на аккаунт:
 - действует «навсегда» → новый код не принимаем (и не тратим его);
-- действует «на 30 дней» → код «навсегда» принимаем, он заменяет 30 дней; ещё один 30-дневный — нет.
+- действует «на 30 дней» → код «навсегда» принимаем, он заменяет 30 дней; ещё один 30-дневный - нет.
 
-Активация атомарна: под app_lock() и условным UPDATE (used_by IS NULL) с проверкой rowcount — один код не
+Активация атомарна: под app_lock() и условным UPDATE (used_by IS NULL) с проверкой rowcount - один код не
 активируют двое даже при одновременном вводе. Защита от перебора: 5 ошибок в час → пауза.
 """
 from __future__ import annotations
@@ -23,7 +26,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import texts
+from app import actionlog, texts
 from app.db.models import Order, Payment, PromoAttempt, PromoCode, User
 from app.services.admin_log import log_admin
 from app.services.locks import app_lock
@@ -35,7 +38,7 @@ MAX_FAILS = 5
 FAIL_WINDOW = timedelta(hours=1)
 REMIND_BEFORE = timedelta(days=3)
 GENERATE_MAX = 200
-_STRIP = re.compile(r"[\s\-_–—.]+")
+_STRIP = re.compile(r"[\s\-_\u2013\u2014.]+")
 
 
 def generate_code() -> str:
@@ -44,7 +47,7 @@ def generate_code() -> str:
 
 
 def normalize(text: str | None) -> str | None:
-    """«aegis rm4q 9vu6», «RM4Q9VU6», «AEGIS-RM4Q-9VU6» → «AEGIS-RM4Q-9VU6»; мусор → None."""
+    """«aegis abcd 2345», «ABCD2345», «AEGIS-ABCD-2345» → «AEGIS-ABCD-2345»; мусор → None."""
     raw = _STRIP.sub("", (text or "").upper())
     if raw.startswith(PREFIX) and len(raw) == len(PREFIX) + 8:
         raw = raw[len(PREFIX):]
@@ -86,7 +89,7 @@ async def _lock_user(session: AsyncSession, user_id: int) -> User | None:
 
 
 async def _apply_to_orders(session: AsyncSession, user_id: int, now: datetime) -> list[int]:
-    """Безлимит включился: заказы на проверке помечаем бесплатными, а ждущие оплаты — сразу в очередь (0 ₽).
+    """Безлимит включился: заказы на проверке помечаем бесплатными, а ждущие оплаты - сразу в очередь (0 ₽).
     Возвращает id заказов, которые стали оплаченными. Без commit."""
     moved: list[int] = []
     rows = (await session.execute(select(Order).where(Order.user_id == user_id,
@@ -95,7 +98,7 @@ async def _apply_to_orders(session: AsyncSession, user_id: int, now: datetime) -
     for order in rows:
         order.unlimited = True
         if order.status == "awaiting_payment":
-            if order.free_tasks:  # «Месяц бесплатно» не тратим — возвращаем задачи
+            if order.free_tasks:  # «Месяц бесплатно» не тратим - возвращаем задачи
                 user = await session.get(User, user_id)
                 if user and user.free_month_until and user.free_month_until > now:
                     user.free_month_tasks_left += order.free_tasks
@@ -138,7 +141,7 @@ async def fails_in_window(session: AsyncSession, user_id: int, now: datetime) ->
 
 
 async def blocked_for(session: AsyncSession, user_id: int, now: datetime) -> int:
-    """Сколько минут ещё пауза после 5 ошибок (0 — можно вводить)."""
+    """Сколько минут ещё пауза после 5 ошибок (0 - можно вводить)."""
     n, first = await fails_in_window(session, user_id, now)
     if n < MAX_FAILS or first is None:
         return 0
@@ -146,7 +149,24 @@ async def blocked_for(session: AsyncSession, user_id: int, now: datetime) -> int
     return max(1, int(left.total_seconds() // 60) + (1 if left.total_seconds() % 60 else 0))
 
 
+PROMO_RESULTS = {
+    "invalid": "неверный код", "revoked": "код отозван", "used": "код уже использован", "mine": "уже активирован им",
+    "blocked": "слишком много попыток", "has_forever": "уже есть безлимит навсегда",
+    "has_days": "уже есть безлимит", "forever": "безлимит навсегда", "days": "безлимит на срок",
+}
+
+
 async def activate(session: AsyncSession, user_id: int, text: str, now: datetime) -> Activation:
+    """Активирует промокод; в журнал действий попадает только маска кода (AEG-****-12) и итог."""
+    res = await _activate(session, user_id, text, now)
+    label = PROMO_RESULTS.get(res.status, res.status)
+    if res.paid_orders:
+        label += f", оплачено заказов: {len(res.paid_orders)}"
+    actionlog.promo_applied(actionlog.by_id(user_id), normalize(text) or text, label)
+    return res
+
+
+async def _activate(session: AsyncSession, user_id: int, text: str, now: datetime) -> Activation:
     norm = normalize(text)
     async with app_lock():
         wait = await blocked_for(session, user_id, now)
@@ -207,7 +227,7 @@ async def activate(session: AsyncSession, user_id: int, text: str, now: datetime
 
 # ------------------------------------------------------------------ админ
 async def grant(session: AsyncSession, user_id: int, days: int | None, admin_id: int, now: datetime) -> User:
-    """Выдать безлимит вручную: days=None — навсегда, иначе на N дней с этого момента."""
+    """Выдать безлимит вручную: days=None - навсегда, иначе на N дней с этого момента."""
     async with app_lock():
         user = await _lock_user(session, user_id)
         if user is None:
@@ -339,7 +359,7 @@ def export_txt(codes: list[PromoCode]) -> str:
 
 
 def parse_txt(text: str) -> dict[str, list[str]]:
-    """Разделы promo_codes.txt → {заголовок: [коды]} (строки до первого раздела — пояснение, пропускаем)."""
+    """Разделы promo_codes.txt → {заголовок: [коды]} (строки до первого раздела - пояснение, пропускаем)."""
     out: dict[str, list[str]] = {}
     current: str | None = None
     for line in text.splitlines():
@@ -356,7 +376,7 @@ def parse_txt(text: str) -> dict[str, list[str]]:
 
 # ------------------------------------------------------------------ планировщик
 async def due_reminders(session: AsyncSession, now: datetime) -> list[User]:
-    """30-дневный безлимит закончится в ближайшие 3 дня — напомнить один раз."""
+    """30-дневный безлимит закончится в ближайшие 3 дня - напомнить один раз."""
     return list((await session.execute(select(User).where(
         User.unlimited_forever.is_(False), User.unlimited_until.is_not(None), User.unlimited_until > now,
         User.unlimited_until <= now + REMIND_BEFORE, User.unlimited_reminded_at.is_(None)))).scalars().all())
@@ -364,7 +384,7 @@ async def due_reminders(session: AsyncSession, now: datetime) -> list[User]:
 
 async def expire(session: AsyncSession, now: datetime) -> list[tuple[int, datetime]]:
     """Закончившиеся безлимиты снимаем. Заказы, отправленные во время безлимита, остаются бесплатными.
-    Возвращает [(user_id, until)] — кому сказать «Безлимит закончился»."""
+    Возвращает [(user_id, until)] - кому сказать «Безлимит закончился»."""
     async with app_lock():
         rows = (await session.execute(select(User).where(
             User.unlimited_forever.is_(False), User.unlimited_until.is_not(None), User.unlimited_until <= now)

@@ -3,9 +3,9 @@
 Блок на главном экране /admin (видит и может нажать только 2 уровень): 👮 Админы (staff.py),
 ⭐ Приоритет / 🎟 Месяц бесплатно, 🚫 Бан / разбан, 💸 Деньги, 🗄 Запросы к БД (dbq.py), 📊 Статистика,
 📣 Рассылка, ⚙️ Настройки, 💾 Данные. Пользователя ищем по @username или ID (services.users.find_user).
-Каждое действие — с подтверждением, уведомлением пользователю и записью в журнал админов (admin_log).
+Каждое действие - с подтверждением, уведомлением пользователю и записью в журнал админов (admin_log).
 
-Права проверяет сервер на каждом нажатии и каждой команде: роутер l2 — IsAdmin(2), l1 — IsAdmin(1).
+Права проверяет сервер на каждом нажатии и каждой команде: роутер l2 - IsAdmin(2), l1 - IsAdmin(1).
 Команды 2 уровня (/give /ban /unban /priority /freemonth /addadmin /removeadmin /db /backup) и быстрое
 «@username +500» от админа 1 уровня получают «Недостаточно прав». Без аргументов команда открывает экран.
 """
@@ -50,8 +50,8 @@ View = tuple[str, InlineKeyboardMarkup]
 DAYS_PRESETS = (7, 14, 30, 60, 90)
 TASKS_PRESETS = (3, 5, 10, 20, 50)
 MAX_DAYS, MAX_TASKS = 3650, 1000
-# «@username +500», «@username -99,90 за ошибку» — знак обязателен, чтобы случайный текст не стал операцией
-QUICK_RE = re.compile(r"^\s*@([A-Za-z0-9_]{3,32})\s+([+\-−–]\s*\d.*)$", re.DOTALL)
+# «@username +500», «@username -99,90 за ошибку» - знак обязателен, чтобы случайный текст не стал операцией
+QUICK_RE = re.compile(r"^\s*@([A-Za-z0-9_]{3,32})\s+([+\-−\u2013]\s*\d.*)$", re.DOTALL)
 FIND_HEAD = {"vip": texts.VIP_TITLE, "bn": texts.BAN_TITLE, "gv": "💸 <b>Деньги</b>",
              "dbu": "👤 <b>Отчёт по пользователю</b>"}
 
@@ -81,7 +81,7 @@ def hub_btn() -> InlineKeyboardButton:
 
 
 def hub_rows() -> list[list[InlineKeyboardButton]]:
-    """Кнопки блока «🔐 Управление (2 уровень)» — на главном экране админки и на экране самого блока."""
+    """Кнопки блока «🔐 Управление (2 уровень)» - на главном экране админки и на экране самого блока."""
     return [[cb("👮 Админы", AdminCb(s="st")), cb("⭐ Приоритет / 🎟 Месяц", V())],
             [cb("🚫 Бан / разбан", B()), cb("💸 Деньги", G())],
             [cb("🗄 Запросы к БД", AdminCb(s="db")), cb("📊 Статистика", AdminCb(s="m", a="stats"))],
@@ -238,7 +238,7 @@ async def ban_hub_view(session: AsyncSession) -> View:
                                          .order_by(User.banned_at.desc()).limit(10))).scalars())
     lines = [texts.BAN_TITLE, texts.BAN_INTRO]
     if total:
-        lines.append(f"\nЗабанены сейчас: <b>{total}</b>" + (" — последние кнопками ниже." if banned else ""))
+        lines.append(f"\nЗабанены сейчас: <b>{total}</b>" + (". Последние кнопками ниже." if banned else ""))
     rows = [[cb("🔍 Найти пользователя", B("find"))]]
     rows += [[cb(f"🚫 {short_name(u)} · {fmt_date(u.banned_at)}", B("user", u.id))] for u in banned]
     rows.append([hub_btn(), menu_btn()])
@@ -270,7 +270,7 @@ async def ban_user_view(session: AsyncSession, config: Config, actor_id: int, ui
         lines += ["", refusal]
         rows = back
     else:
-        lines.append("\nВыбери причину бана — её увидит пользователь:")
+        lines.append("\nВыбери причину бана: её увидит пользователь:")
         reasons = [cb(title, B("ask", u.id, code)) for code, title in users.BAN_REASONS.items()]
         rows = [reasons[:2], reasons[2:], [cb("✏️ Своя причина", B("custom", u.id)),
                                           cb("Без причины", B("ask", u.id, "none"))], *back]
@@ -320,7 +320,7 @@ def _overflow() -> str:
 
 
 def amount_problem(u: User, amount: int) -> str | None:
-    """Сумма не влезает в 64 бита или списывать нечего — сразу говорим, без подтверждения."""
+    """Сумма не влезает в 64 бита или списывать нечего - сразу говорим, без подтверждения."""
     if not admin_money.check_amount(amount, u.balance_rub):
         return _overflow()
     if amount < 0 and u.balance_rub <= 0:
@@ -332,8 +332,8 @@ def give_confirm_text(u: User, amount: int, comment: str, s: RuntimeSettings) ->
     after = u.balance_rub + amount if amount > 0 else max(0, u.balance_rub + amount)
     extra = ""
     if comment:
-        extra = f"\nКомментарий: «{html.escape(comment)}»" + (" — клиент его увидит." if s.admin_give_show_comment
-                                                               else " — только в журнале.")
+        extra = f"\nКомментарий: «{html.escape(comment)}»" + (", клиент его увидит." if s.admin_give_show_comment
+                                                               else ", только в журнале.")
     if amount < 0 and -amount > u.balance_rub:
         extra += texts.GIVE_CLAMP_WARN
     return texts.GIVE_CONFIRM.format(verb=_verb(amount), amount=fmt_rub(abs(amount)), user=display_name(u),
@@ -341,7 +341,7 @@ def give_confirm_text(u: User, amount: int, comment: str, s: RuntimeSettings) ->
 
 
 async def give_confirm(state: FSMContext, u: User, amount: int, comment: str, s: RuntimeSettings) -> View:
-    """Экран «Подтвердить» — данные операции (с одноразовым кодом op) лежат в FSM, кнопка лишь подтверждает."""
+    """Экран «Подтвердить» - данные операции (с одноразовым кодом op) лежат в FSM, кнопка лишь подтверждает."""
     await state.set_state(None)
     await state.update_data(give={"uid": u.id, "amount": amount, "comment": comment, "op": admin_money.new_op()})
     return give_confirm_text(u, amount, comment, s), ik([cb(texts.GIVE_CONFIRM_BTN, G("ok", u.id, str(amount)))],
@@ -350,7 +350,7 @@ async def give_confirm(state: FSMContext, u: User, amount: int, comment: str, s:
 
 async def start_give(message: Message, state: FSMContext, session: AsyncSession, s: RuntimeSettings, u: User,
                      amount: int, comment: str) -> None:
-    """Команда или быстрое сообщение с суммой: сразу экран подтверждения (комментарий — из той же строки)."""
+    """Команда или быстрое сообщение с суммой: сразу экран подтверждения (комментарий - из той же строки)."""
     await state.clear()
     problem = amount_problem(u, amount)
     if problem:
@@ -426,7 +426,7 @@ async def cmd_give(message: Message, command: CommandObject, state: FSMContext, 
 
 @l2.message(StateFilter(None), F.text.regexp(QUICK_RE), F.reply_to_message.is_(None))
 async def quick_give(message: Message, state: FSMContext, session: AsyncSession, s: RuntimeSettings) -> None:
-    """«@username +500» / «@username -500 комментарий» — то же, что /give, коротким сообщением."""
+    """«@username +500» / «@username -500 комментарий» - то же, что /give, коротким сообщением."""
     m = QUICK_RE.match(message.text or "")
     amount, comment = split_amount(m.group(2)) if m else (None, "")
     if amount is None:
@@ -504,7 +504,7 @@ async def cmd_freemonth(message: Message, command: CommandObject, state: FSMCont
         return
     days = _days(parts[0])
     if days is None:
-        await message.answer(texts.VIP_NUMBER_BAD.format(max=MAX_DAYS) + " — дни. Пример: <code>/freemonth "
+        await message.answer(texts.VIP_NUMBER_BAD.format(max=MAX_DAYS) + " Это дни. Пример: <code>/freemonth "
                              "@username 30 10</code>")
         return
     if len(parts) == 1:
@@ -512,7 +512,7 @@ async def cmd_freemonth(message: Message, command: CommandObject, state: FSMCont
         return
     pair = _pair(f"{days}.{parts[1]}")
     if pair is None:
-        await message.answer(texts.VIP_NUMBER_BAD.format(max=MAX_TASKS) + " — задачи. Пример: <code>/freemonth "
+        await message.answer(texts.VIP_NUMBER_BAD.format(max=MAX_TASKS) + " Это задачи. Пример: <code>/freemonth "
                              "@username 30 10</code>")
         return
     await _reply(message, await fm_confirm_view(session, u.id, *pair))
@@ -545,7 +545,7 @@ async def cmd_removeadmin(message: Message, command: CommandObject, state: FSMCo
         await _reply(message, await staff.remove_view(session, config, message.from_user.id, u.id))
 
 
-# /db и /backup живут в dbq.py; регистрируем здесь, до вводов, — чтобы срабатывали из любого шага
+# /db и /backup живут в dbq.py; регистрируем здесь, до вводов, - чтобы срабатывали из любого шага
 l2.message(Command("db"))(dbq.cmd_db)
 l2.message(Command("backup"))(dbq.cmd_backup)
 
@@ -560,7 +560,7 @@ async def find_input(message: Message, state: FSMContext, session: AsyncSession,
     data = await state.get_data()
     purpose = str(data.get("purpose") or "")
     u, error = await find_user(session, message.text)
-    if u is None:  # ввод остаётся открытым — можно сразу прислать другой ник или ID
+    if u is None:  # ввод остаётся открытым - можно сразу прислать другой ник или ID
         await message.answer(error, reply_markup=ik([cancel_btn(BACK.get(purpose, AdminCb(s="g")))]))
         return
     await state.clear()
@@ -708,7 +708,7 @@ async def vip_user(call: CallbackQuery, callback_data: AdminCb, state: FSMContex
 
 
 @l2.callback_query(_on("vip", "pr"))
-@l2.callback_query(_on("u", "prio"))  # кнопка из старой карточки пользователя — теперь с подтверждением
+@l2.callback_query(_on("u", "prio"))  # кнопка из старой карточки пользователя - теперь с подтверждением
 async def vip_priority(call: CallbackQuery, callback_data: AdminCb, session: AsyncSession) -> None:
     await _show(call, await priority_confirm_view(session, callback_data.id))
 
@@ -824,7 +824,7 @@ async def bn_ask(call: CallbackQuery, callback_data: AdminCb, session: AsyncSess
 @l2.callback_query(_on("bn", "custom"))
 async def bn_custom(call: CallbackQuery, callback_data: AdminCb, state: FSMContext) -> None:
     await call.answer()
-    await ask(call, state, AdminSG.ban_custom, "✏️ Напиши причину бана — её увидит пользователь (до 200 символов):",
+    await ask(call, state, AdminSG.ban_custom, "✏️ Напиши причину бана: её увидит пользователь (до 200 символов):",
               ik([cancel_btn(B("user", callback_data.id))]), uid=callback_data.id)
 
 
@@ -922,7 +922,7 @@ async def gv_ok(call: CallbackQuery, callback_data: AdminCb, state: FSMContext, 
         await call.answer(texts.STALE_BUTTON, show_alert=True)
         return
     amount, limit = int(data["amount"]), int(s.admin_give_confirm_over)
-    if callback_data.a == "ok" and abs(amount) > limit:  # большая сумма — второе подтверждение («проверь нули»)
+    if callback_data.a == "ok" and abs(amount) > limit:  # большая сумма - второе подтверждение («проверь нули»)
         u = await _user(session, callback_data.id)
         if u is None:
             await call.answer(texts.NOT_FOUND, show_alert=True)

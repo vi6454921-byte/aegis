@@ -1,9 +1,9 @@
 """Админка 2 уровня → «🔐 Управление» → «🎟 Промокоды»: коды на безлимит и сам безлимит у пользователей.
 
 Список кодов со статусами (свободен / активирован кем и когда / отозван), фильтры, карточка кода, отзыв
-(если код — текущий безлимит пользователя, безлимит снимается и клиенту приходит уведомление), выгрузка в txt
+(если код - текущий безлимит пользователя, безлимит снимается и клиенту приходит уведомление), выгрузка в txt
 (тот же формат, что promo_codes.txt), выпуск новых кодов, ручная выдача и снятие безлимита.
-Все действия — в admin_log. У админов 1 уровня этих кнопок нет, а старые нажатия отсекает фильтр уровня."""
+Все действия - в admin_log. У админов 1 уровня этих кнопок нет, а старые нажатия отсекает фильтр уровня."""
 from __future__ import annotations
 
 import html
@@ -230,7 +230,7 @@ async def _generate(message: Message, session: AsyncSession, admin_id: int, kind
 @router.callback_query(_on("gen_go"))
 async def pc_gen_go(call: CallbackQuery, callback_data: AdminCb, state: FSMContext, session: AsyncSession,
                     bot: Bot) -> None:
-    kind, n = callback_data.v, callback_data.id  # кнопки «5 / 10 / 20»: v — тип, id — сколько
+    kind, n = callback_data.v, callback_data.id  # кнопки «5 / 10 / 20»: v - тип, id - сколько
     if not 1 <= n <= pc.GENERATE_MAX:
         await call.answer(texts.PC_GEN_BAD.format(max=pc.GENERATE_MAX), show_alert=True)
         return
@@ -263,7 +263,7 @@ async def pc_find(call: CallbackQuery, state: FSMContext) -> None:
 @router.message(AdminPromoSG.find_code)
 async def pc_find_input(message: Message, state: FSMContext, session: AsyncSession, bot: Bot) -> None:
     code = await pc.find(session, message.text)
-    if code is None:  # ввод остаётся открытым — можно прислать другой
+    if code is None:  # ввод остаётся открытым - можно прислать другой
         await message.answer(texts.PC_NOT_FOUND, reply_markup=ik([cancel_btn(P())]))
         return
     data = await state.get_data()
@@ -281,7 +281,7 @@ async def pc_users(call: CallbackQuery, state: FSMContext, session: AsyncSession
     lines = [texts.PC_USERS_TITLE.format(n=len(users))]
     buttons = []
     for u in users[:40]:
-        lines.append(f"• {display_name(u)} — {unlimited_status(u)}")
+        lines.append(f"• {display_name(u)}: {unlimited_status(u)}")
         if len(buttons) < 20:
             buttons.append([cb(f"♾ {u.username and '@' + u.username or u.first_name or u.id}"[:40], P("user", u.id))])
     if not users:

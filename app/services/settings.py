@@ -16,15 +16,19 @@ from app.utils.money import fmt_mult, fmt_rub, parse_mult, parse_rub
 
 BASE_DEFAULTS: dict[str, Any] = {
     "price_nach": 20000,
-    "price_calc": 20000,
+    "price_calc": 40000,
     "price_explain": 15000,
-    "notes_discount_nach": True,
+    "notes_discount_nach": False,  # v2.4: начерталка ровно 200 ₽ за задачу, без скидок за конспекты
     "notes_discount_calc": False,
     "discount_lecture_pct": 25,
     "discount_practice_pct": 25,
-    # Срочность: до дедлайна ≥ urgency_free_hours — множитель urgency_ge72_pct (без наценки),
-    # от urgency_mid_hours до urgency_free_hours — urgency_24_72_pct, меньше urgency_mid_hours — urgency_lt24_pct.
-    # (имена ключей исторические — значения у старых установок сохраняются)
+    # Срочность: до дедлайна ≥ urgency_free_hours - множитель urgency_ge72_pct (без наценки),
+    # от urgency_mid_hours до urgency_free_hours - urgency_24_72_pct, меньше urgency_mid_hours - urgency_lt24_pct.
+    # (имена ключей исторические - значения у старых установок сохраняются)
+    # v2.4: наценка за срочность по предметам; начерталка и расчётка без наценки, объяснение как раньше
+    "urgency_nach": False,
+    "urgency_calc": False,
+    "urgency_explain": True,
     "urgency_free_hours": 48,
     "urgency_mid_hours": 24,
     "urgency_ge72_pct": 100,
@@ -32,11 +36,11 @@ BASE_DEFAULTS: dict[str, Any] = {
     "urgency_lt24_pct": 200,
     "max_tasks_per_day": 15,
     "show_slots_threshold": 5,
-    "intake_mode": "auto",  # auto — по лимиту, closed — закрыт вручную, open — открыт вручную без лимита
+    "intake_mode": "auto",  # auto - по лимиту, closed - закрыт вручную, open - открыт вручную без лимита
     "unlimited_bypass_limit": False,  # безлимитные заказы (промокод) принимаются сверх дневного лимита
     "draft_ttl_days": 7,  # через сколько дней без движения удаляем черновик заказа (за день предупреждаем)
-    "stray_timeout_minutes": 10,  # «Это задание?» без ответа — через столько минут отправляем админам
-    "referral_bonus": 0,  # бонус за друга с оплаченным заказом; 0 — выключен (основной бонус — за подписку)
+    "stray_timeout_minutes": 10,  # «Это задание?» без ответа - через столько минут отправляем админам
+    "referral_bonus": 0,  # бонус за друга с оплаченным заказом; 0 - выключен (основной бонус - за подписку)
     "channel_username": "@aegis_samara",
     "channel_bonus_enabled": True,
     "channel_bonus": 5000,
@@ -61,29 +65,29 @@ BASE_DEFAULTS: dict[str, Any] = {
     "stats_offset_first_try": 84,
     "welcome_text": texts.DEFAULT_WELCOME,
     "terms_text": texts.DEFAULT_TERMS,
-    # подарки — ссылки в тексте приветствия и «🎁 Подарки» (названия — app/services/gifts.py); "" — скрыт
+    # подарки - ссылки в тексте приветствия и «🎁 Подарки» (названия - app/services/gifts.py); "" - скрыт
     "gift_url_calc": "https://fgdg346346hgjghj.github.io/Aegis-14/#z1a",
     "gift_url_nach": "https://fgdg346346hgjghj.github.io/Aegis-/#start",
     "gift_url_matrices": "https://fgdg346346hgjghj.github.io/matric/",
-    # v2.2: задания «Ссылка в профиле» и «Пост о нас» — награды обычными рублями (копейки)
+    # v2.2: задания «Ссылка в профиле» и «Пост о нас» - награды обычными рублями (копейки)
     "profile_task_enabled": True,
     "profile_task_reward": 10000,
-    "profile_recheck_days": 0,  # 0 — не перепроверять
+    "profile_recheck_days": 0,  # 0 - не перепроверять
     "post_task_enabled": True,
     "post_base_reward": 20000,
     "post_views_step": 100,
     "post_views_reward": 10000,
-    "post_views_cap": 0,  # потолок выплат за просмотры на один пост; 0 — без потолка
+    "post_views_cap": 0,  # потолок выплат за просмотры на один пост; 0 - без потолка
     "post_report_cooldown_hours": 12,
     "post_max_pending": 1,
     "post_max_active": 3,
     "post_template": texts.DEFAULT_POST_TEMPLATE,
     "withdraw_note": texts.WITHDRAW_SOON,
     # v2.2: выдача денег админом
-    "admin_give_confirm_over": 1000000,  # больше 10 000 ₽ — повторное подтверждение
+    "admin_give_confirm_over": 1000000,  # больше 10 000 ₽ - повторное подтверждение
     "admin_give_show_comment": True,
 }
-REAL_PAYMENT_MODES = ("stars", "manual")  # настоящие деньги; test — воображаемые
+REAL_PAYMENT_MODES = ("stars", "manual")  # настоящие деньги; test - воображаемые
 
 _defaults: dict[str, Any] = dict(BASE_DEFAULTS)
 
@@ -118,13 +122,22 @@ class RuntimeSettings(dict):
     def notes_discount_for(self, subject: str) -> bool:
         return bool(self.get(f"notes_discount_{subject}", False))
 
+    def urgency_for(self, subject: str | None) -> bool:
+        """Есть ли наценка за срочность у этого предмета (v2.4: только у объяснения материала)."""
+        return bool(subject) and bool(self.get(f"urgency_{subject}", False))
+
+    @property
+    def any_urgency(self) -> bool:
+        """Хоть у одного вида заказа есть наценка за срочность (тогда показываем таблицу множителей)."""
+        return any(self.urgency_for(code) for code in ("nach", "calc", "explain"))
+
     @property
     def rate(self) -> Decimal:
         return Decimal(str(self["rub_per_star"]))
 
     @property
     def channel(self) -> str:
-        """«@aegis_samara» или пусто — канал не настроен."""
+        """«@aegis_samara» или пусто - канал не настроен."""
         return str(self.get("channel_username") or "").strip()
 
     @property
@@ -154,7 +167,7 @@ async def load_settings(session: AsyncSession) -> RuntimeSettings:
 
 
 async def set_setting(session: AsyncSession, key: str, value: Any) -> None:
-    """Без commit — вызывающий коммитит вместе с записью в admin_log."""
+    """Без commit - вызывающий коммитит вместе с записью в admin_log."""
     if key not in _defaults:
         raise KeyError(key)
     row = await session.get(Setting, key)
@@ -168,13 +181,16 @@ async def set_setting(session: AsyncSession, key: str, value: Any) -> None:
 # ------------------------------------------------------------------ для админки
 # key: (тип, подпись)
 META: dict[str, tuple[str, str]] = {
-    "price_nach": ("money", "Цена задачи — начерталка"),
-    "price_calc": ("money", "Цена задачи — расчётка"),
+    "price_nach": ("money", "Цена задачи: начерталка"),
+    "price_calc": ("money", "Цена задачи: расчётка"),
     "price_explain": ("money", "Цена объяснения материала"),
-    "notes_discount_nach": ("bool", "Скидки за конспекты — начерталка"),
-    "notes_discount_calc": ("bool", "Скидки за конспекты — расчётка"),
+    "notes_discount_nach": ("bool", "Скидки за конспекты: начерталка"),
+    "notes_discount_calc": ("bool", "Скидки за конспекты: расчётка"),
     "discount_lecture_pct": ("pct", "Скидка за лекцию, %"),
     "discount_practice_pct": ("pct", "Скидка за практику, %"),
+    "urgency_nach": ("bool", "Наценка за срочность: начерталка"),
+    "urgency_calc": ("bool", "Наценка за срочность: расчётка"),
+    "urgency_explain": ("bool", "Наценка за срочность: объяснение"),
     "urgency_free_hours": ("int", "Без наценки, если до дедлайна от, ч"),
     "urgency_mid_hours": ("int", "Максимальная наценка, если меньше, ч"),
     "urgency_ge72_pct": ("mult", "Множитель «заранее»"),
@@ -185,13 +201,13 @@ META: dict[str, tuple[str, str]] = {
     "intake_mode": ("enum:auto,closed,open", "Приём заказов"),
     "unlimited_bypass_limit": ("bool", "Безлимит обходит дневной лимит"),
     "draft_ttl_days": ("int", "Удалять черновик заказа через, дней"),
-    "stray_timeout_minutes": ("int", "«Это задание?» без ответа — админам через, мин"),
-    "referral_bonus": ("money", "Бонус за друга с оплаченным заказом (0 — выкл)"),
+    "stray_timeout_minutes": ("int", "«Это задание?» без ответа: админам через, мин"),
+    "referral_bonus": ("money", "Бонус за друга с оплаченным заказом (0: выкл)"),
     "channel_username": ("str", "Канал"),
     "channel_bonus_enabled": ("bool", "Бонусы за подписку на канал"),
     "channel_bonus": ("money", "Бонус за подписку"),
     "channel_ref_bonus": ("money", "Бонус пригласившему за подписку друга"),
-    "channel_hold_hours": ("int", "Удержание: отписка раньше — бонус списывается, ч"),
+    "channel_hold_hours": ("int", "Удержание: отписка раньше, бонус списывается, ч"),
     "channel_ref_daily_limit": ("int", "Друзей за сутки на одного, не больше"),
     "priority_threshold": ("int", "Друзей до «Приоритета»"),
     "free_month_threshold": ("int", "Друзей до «Месяца бесплатно»"),
@@ -202,7 +218,7 @@ META: dict[str, tuple[str, str]] = {
     "rub_per_star": ("decimal", "Курс: ₽ за 1 звезду"),
     "payments_mode": ("enum:test,stars,manual", "Режим оплаты"),
     "manual_pay_details": ("text", "Реквизиты для перевода"),
-    "pay_reminder_hours": ("int", "Напомнить клиенту об оплате через, ч (0 — выкл)"),
+    "pay_reminder_hours": ("int", "Напомнить клиенту об оплате через, ч (0: выкл)"),
     "admin_autosend_files": ("bool", "Сразу присылать админам файлы нового заказа"),
     "topup_packages": ("money_list", "Пакеты пополнения"),
     "topup_bonus_enabled": ("bool", "Бонус к пополнению"),
@@ -216,12 +232,12 @@ META: dict[str, tuple[str, str]] = {
     "gift_url_matrices": ("url", "🔢 Матрицы"),
     "profile_task_enabled": ("bool", "Задание «Ссылка в профиле»"),
     "profile_task_reward": ("money", "Награда за ссылку в профиле"),
-    "profile_recheck_days": ("int", "Перепроверить ссылку через, дней (0 — выкл)"),
+    "profile_recheck_days": ("int", "Перепроверить ссылку через, дней (0: выкл)"),
     "post_task_enabled": ("bool", "Задание «Пост о нас»"),
     "post_base_reward": ("money", "Награда за принятый пост"),
     "post_views_step": ("int", "Шаг просмотров"),
     "post_views_reward": ("money", "Сумма за каждый шаг просмотров"),
-    "post_views_cap": ("money", "Потолок за просмотры на пост (0 — без потолка)"),
+    "post_views_cap": ("money", "Потолок за просмотры на пост (0: без потолка)"),
     "post_report_cooldown_hours": ("int", "Отчёт по посту не чаще, чем раз в, ч"),
     "post_max_pending": ("int", "Отчётов по посту на проверке одновременно"),
     "post_max_active": ("int", "Активных постов у пользователя, не больше"),
@@ -234,7 +250,7 @@ META: dict[str, tuple[str, str]] = {
 GROUPS: dict[str, tuple[str, list[str]]] = {
     "prices": ("💵 Цены и скидки", ["price_nach", "price_calc", "price_explain", "notes_discount_nach",
                                     "notes_discount_calc", "discount_lecture_pct", "discount_practice_pct"]),
-    "urgency": ("⏱ Срочность", ["urgency_free_hours", "urgency_mid_hours", "urgency_ge72_pct", "urgency_24_72_pct",
+    "urgency": ("⏱ Срочность", ["urgency_nach", "urgency_calc", "urgency_explain", "urgency_free_hours", "urgency_mid_hours", "urgency_ge72_pct", "urgency_24_72_pct",
                                 "urgency_lt24_pct"]),
     "slots": ("📦 Места и приём", ["intake_mode", "max_tasks_per_day", "show_slots_threshold",
                                     "unlimited_bypass_limit", "draft_ttl_days", "stray_timeout_minutes"]),
@@ -287,16 +303,16 @@ def format_value(key: str, value: Any) -> str:
     if kind == "money_list":
         return " / ".join(fmt_rub(int(v)) for v in value)
     if kind == "money_map":
-        return ", ".join(f"{fmt_rub(int(k))} → +{fmt_rub(int(v))}" for k, v in value.items()) or "—"
+        return ", ".join(f"{fmt_rub(int(k))} → +{fmt_rub(int(v))}" for k, v in value.items()) or "-"
     if kind in ("text", "template"):
         one = str(value).replace("\n", " ").strip()
         if not one:
-            return "—"
+            return "-"
         return (one[:60] + "…") if len(one) > 60 else one
     if kind == "str":
-        return str(value) or "— (выключено)"
+        return str(value) or "выключено"
     if kind == "url":
-        return re.sub(r"^https?://", "", str(value or "")) or "— (скрыт)"
+        return re.sub(r"^https?://", "", str(value or "")) or "скрыт"
     return str(value)
 
 
@@ -314,7 +330,7 @@ def parse_value(key: str, text: str) -> Any:
             return 0
         v = parse_rub(t)
         if v is None:
-            raise ValueError("Нужна сумма в рублях, например 200" + (" (или 0 — выключить)" if key in MONEY_ZERO_OK
+            raise ValueError("Нужна сумма в рублях, например 200" + (" (или 0: выключить)" if key in MONEY_ZERO_OK
                                                                     else ""))
         if v > MONEY_SETTING_MAX:
             raise ValueError(f"Слишком большая сумма (максимум {fmt_rub(MONEY_SETTING_MAX)})")
@@ -324,7 +340,7 @@ def parse_value(key: str, text: str) -> Any:
             raise ValueError("Нужно целое число")
         v = int(t)
         if kind == "pct" and not 0 <= v <= 100:
-            raise ValueError("Процент — от 0 до 100")
+            raise ValueError("Процент: от 0 до 100")
         lo, hi = INT_LIMITS.get(key, (0, 10**6))
         if v < lo:
             raise ValueError(f"Не меньше {lo}")
@@ -370,12 +386,12 @@ def parse_value(key: str, text: str) -> Any:
         if not t:
             raise ValueError("Текст не может быть пустым")
         if "{link}" not in t:
-            raise ValueError("Добавь в текст {link} — туда подставится ссылка на бота")
+            raise ValueError("Добавь в текст {link}: туда подставится ссылка на бота")
         if len(t) > 2000:
             raise ValueError("Слишком длинно (максимум 2000 символов)")
         return t
     if kind == "text":
-        if key in TEXT_CLEARABLE and t in ("-", "—", "нет", "очистить"):
+        if key in TEXT_CLEARABLE and t in ("-", "\u2014", "нет", "очистить"):
             return ""
         if not t:
             raise ValueError("Текст не может быть пустым")
@@ -414,22 +430,22 @@ CHANNEL_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]{3,31}")
 
 
 def parse_channel(text: str) -> str:
-    """«@name», «t.me/name», «https://t.me/name» → «@name»; «-» — выключить."""
+    """«@name», «t.me/name», «https://t.me/name» → «@name»; «-» - выключить."""
     t = (text or "").strip()
-    if t in ("-", "—", "нет", "выкл", "0"):
+    if t in ("-", "\u2014", "нет", "выкл", "0"):
         return ""
     t = re.sub(r"^(https?://)?(www\.)?(t|telegram)\.me/", "", t, flags=re.IGNORECASE).strip("/").lstrip("@")
     if not CHANNEL_RE.fullmatch(t):
-        raise ValueError("Нужен публичный канал: @username или ссылка t.me/username (или «-» — выключить)")
+        raise ValueError("Нужен публичный канал: @username или ссылка t.me/username (или «-», выключить)")
     return "@" + t
 
 
 URL_RE = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
-OFF_WORDS = ("-", "—", "нет", "выкл", "0")
+OFF_WORDS = ("-", "\u2014", "нет", "выкл", "0")
 
 
 def parse_url(text: str) -> str:
-    """Ссылка на подарок: https://… (без схемы — допишем https://); «-» — скрыть подарок."""
+    """Ссылка на подарок: https://… (без схемы - допишем https://); «-» - скрыть подарок."""
     t = (text or "").strip()
     if t.lower() in OFF_WORDS:
         return ""
@@ -441,10 +457,10 @@ def parse_url(text: str) -> str:
         host = ""
     if "." not in host or len(t) > 1000:
         raise ValueError("Нужна ссылка вида https://…, например https://username.github.io/page/ "
-                         "(или «-» — скрыть подарок)")
+                         "(или «-»: скрыть подарок)")
     return t
 
 
 def default_value(key: str) -> Any:
-    """Значение по умолчанию (с учётом .env) — для кнопки «Сбросить»."""
+    """Значение по умолчанию (с учётом .env) - для кнопки «Сбросить»."""
     return _defaults[key]

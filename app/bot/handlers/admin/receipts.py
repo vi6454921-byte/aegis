@@ -1,4 +1,4 @@
-"""Админка → 🧾 Чеки: оплата переводом. Клиент прислал чек — админ сверяет поступление и подтверждает."""
+"""Админка → 🧾 Чеки: оплата переводом. Клиент прислал чек - админ сверяет поступление и подтверждает."""
 from __future__ import annotations
 
 from aiogram import Bot, F
@@ -52,7 +52,7 @@ def receipt_header(payment: Payment, user: User | None) -> str:
 
 
 async def notify_receipt(bot: Bot, session: AsyncSession, config: Config, payment: Payment, user: User) -> None:
-    """Чек от клиента — всем админам: файл чека с подписью и кнопками. Без commit."""
+    """Чек от клиента - всем админам: файл чека с подписью и кнопками. Без commit."""
     header = receipt_header(payment, user)
     for admin_id, _lvl in staff_targets(config, 1):
         try:
@@ -158,7 +158,7 @@ async def r_confirm_ask(call: CallbackQuery, callback_data: AdminCb, session: As
 @router.callback_query(_f("no_go"))
 async def r_decide(call: CallbackQuery, callback_data: AdminCb, session: AsyncSession, s: RuntimeSettings,
                    bot: Bot, config: Config) -> None:
-    from app.bot.handlers.payments import report  # noqa: PLC0415 — handlers.payments импортирует админку
+    from app.bot.handlers.payments import report  # noqa: PLC0415 - handlers.payments импортирует админку
 
     approved = callback_data.a == "ok_go"
     try:
@@ -171,14 +171,14 @@ async def r_decide(call: CallbackQuery, callback_data: AdminCb, session: AsyncSe
     stamp = f"{short_name(admin)} · {to_local(now_utc()):%H:%M}"
     if approved:
         await call.answer("Оплата подтверждена ✅")
-        await report(bot, config, res, payment.user_id)
+        await report(bot, config, res, payment.user_id, session, s)
         marker = f"✅ Оплата подтверждена: {stamp}"
     else:
         await call.answer("Отклонено")
         kb = None
         if payment.order_id:
             order = await session.get(Order, payment.order_id)
-            if order is not None and order.status == "awaiting_payment":
+            if order is not None and order.status in svc.PAYABLE:
                 kb = ik([cb(f"{texts.PAY_BTN} · {fmt_rub(order.price_final or 0)}",
                             PayCb(action="order", id=order.id))])
         await safe_send(bot, payment.user_id, texts.MANUAL_REJECTED.format(

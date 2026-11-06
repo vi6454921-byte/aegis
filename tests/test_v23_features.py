@@ -268,7 +268,7 @@ async def test_unlimited_30_days_reminder_then_expiry(e2e, sessionmaker, config)
     watch = scheduler.unlimited_watch
     assert await watch(h.bot, config, sessionmaker, until - timedelta(days=5)) == (0, 0)
     assert await watch(h.bot, config, sessionmaker, until - timedelta(days=2)) == (1, 0)
-    assert h.last_text(A2).startswith(f"⏰ Безлимит закончится {full_date(until)} — осталось")
+    assert h.last_text(A2).startswith(f"⏰ Безлимит закончится {full_date(until)}, осталось")
     assert await watch(h.bot, config, sessionmaker, until - timedelta(days=1)) == (0, 0)  # напоминаем один раз
     assert await watch(h.bot, config, sessionmaker, until + timedelta(minutes=1)) == (0, 1)
     assert h.last_text(A2) == texts.PROMO_ENDED
@@ -326,7 +326,7 @@ async def test_free_order_by_unlimited_without_invoice(e2e, sessionmaker) -> Non
     before = await get_user(sessionmaker, A2)
     await h.send(A2, f"/promo {await free_code(sessionmaker)}")
     oid = await wizard_order(h, A2, notes=False)
-    assert "У тебя безлимит — счёт не придёт" in h.last_text(A2)
+    assert "У тебя безлимит, счёт не придёт" in h.last_text(A2)
     alert = next(t for t in reversed(h.texts(A1)) if texts.ADMIN_ORDER_UNLIMITED in t)
     assert f"#{oid}" in alert
 
@@ -347,16 +347,17 @@ async def test_free_order_by_unlimited_without_invoice(e2e, sessionmaker) -> Non
         user = await db.get(User, A2)
         assert (user.balance_rub, user.balance_bonus) == (before.balance_rub, before.balance_bonus)
     line = paid_line(order)
-    assert "промокод" in line and line.endswith("0 ₽")
+    assert "промокод" in line and line.endswith("0 ₽</b>")
     assert texts.INVOICE_UNLIMITED.format(id=oid) in h.texts(A2)
     assert not any(texts.PAY_BTN in label for label in buttons(h, A2))  # кнопки оплаты не было
 
     await h.click_data(A1, AdminCb(s="o", a="open", id=oid).pack())
-    assert "промокод (безлимит), 0 ₽" in h.last_text(A1)
+    assert "промокод (безлимит), <b>0 ₽</b>" in h.last_text(A1)
     assert "🛠 Взять в работу" in buttons(h, A1)  # заказ в очереди
 
 
 async def test_unlimited_explain_is_free_and_notes_need_no_review(sessionmaker) -> None:
+    await set_settings(sessionmaker, notes_discount_nach=True)  # v2.4: по умолчанию скидок за конспекты нет
     async with sessionmaker() as db:
         await make_user(db, 2002)
         await pc.grant(db, 2002, None, A1, now_utc())
@@ -515,12 +516,13 @@ async def test_level1_admin_has_no_promo_codes(e2e, sessionmaker, config) -> Non
 
 
 async def test_promo_codes_txt_matches_database(e2e, sessionmaker) -> None:
+    """v2.4: файла с кодами в проекте нет; выгрузка из админки = коды в базе (в тестах их 45, см. conftest)."""
     h, _ = e2e
-    file_sections = pc.parse_txt((ROOT / "promo_codes.txt").read_text(encoding="utf-8"))
+    assert not (ROOT / "promo_codes.txt").exists()
     async with sessionmaker() as db:
         codes = await pc.all_codes(db)
+    file_sections = pc.parse_txt(pc.export_txt(codes))
     assert {k: len(v) for k, v in file_sections.items()} == {"Навсегда (35)": 35, "30 дней (10)": 10}
-    assert file_sections == pc.parse_txt(pc.export_txt(codes))  # файл в проекте = коды в базе
     assert set(file_sections["Навсегда (35)"]) == {c.code for c in codes if c.kind == "forever"}
     assert set(file_sections["30 дней (10)"]) == {c.code for c in codes if c.kind == "days" and c.days == 30}
     everything = [c for v in file_sections.values() for c in v]
@@ -585,7 +587,7 @@ async def test_overdue_draft_is_warned_first_and_deleted_a_day_later(e2e, sessio
     later = now_utc() + timedelta(days=30)
     cleanup = scheduler.drafts_cleanup
     assert await cleanup(h.bot, config, sessionmaker, later) == (1, 0)  # сразу не удаляем — предупреждаем
-    assert h.last_text(A2).startswith("⏳ Черновик заказа (фото: 1) без движения уже 30 дн. — завтра мы его удалим.")
+    assert h.last_text(A2).startswith("⏳ Черновик заказа (фото: 1) без движения уже 30 дн., завтра мы его удалим.")
     async with sessionmaker() as db:
         assert (await svc.get_draft(db, A2)).updated_at == touched  # предупреждение — не «движение»
     assert await cleanup(h.bot, config, sessionmaker, later + timedelta(hours=23)) == (0, 0)
@@ -820,7 +822,7 @@ async def test_order_card_shows_conversation(e2e, sessionmaker) -> None:
     assert thread.index("🛡 Аня · ") < thread.index("Какой у тебя вариант?") < thread.index(
         f"{texts.CHAT_FROM_CLIENT} · ") < thread.index("Вариант 7")
     await h.click(A1, texts.CHAT_HISTORY_BTN)
-    assert h.last_text(A1).startswith(f"💬 <b>Переписка — По заказу №{oid}</b> (2 сообщ.)")
+    assert h.last_text(A1).startswith(f"💬 <b>Переписка · По заказу №{oid}</b> (2 сообщ.)")
 
 
 async def test_admin_swipe_reply_on_order_alert_goes_to_client(e2e, sessionmaker) -> None:
@@ -854,7 +856,7 @@ async def test_inbox_lists_new_orders_and_messages_newest_first(e2e, sessionmake
     assert texts.INBOX_TODO.format(n="<b>2</b>") in h.last_text(A1)
     await h.click(A1, texts.INBOX_BTN.format(n=2))
     view = h.last_text(A1)
-    assert view.startswith("📥 <b>Входящие</b> — ждут нас: 2\nСначала новые.")
+    assert view.startswith("📥 <b>Входящие</b>: ждут нас 2\n\nСначала новые.")
     assert view.index("Не приходит решение") < view.index(f"Заказ #{oid}")
 
     async with sessionmaker() as db:  # заказ пришёл позавчера — в «За сегодня» его нет

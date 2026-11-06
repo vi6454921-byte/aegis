@@ -42,13 +42,13 @@ class User(Base):
     banned_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     appeal_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     appeals_count: Mapped[int] = mapped_column(Integer, default=0)
-    # подписка на канал (бонус — один раз на аккаунт)
+    # подписка на канал (бонус - один раз на аккаунт)
     channel_status: Mapped[str | None] = mapped_column(String(16))  # member | left
     channel_checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     channel_bonus_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     channel_bonus_amount: Mapped[int] = mapped_column(BigInteger, default=0)
     channel_bonus_revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
-    # безлимит (v2.3): навсегда или до даты; источник — промокод (unlimited_code_id) или админ (unlimited_by)
+    # безлимит (v2.3): навсегда или до даты; источник - промокод (unlimited_code_id) или админ (unlimited_by)
     unlimited_forever: Mapped[bool] = mapped_column(Boolean, default=False)
     unlimited_until: Mapped[datetime | None] = mapped_column(UTCDateTime)
     unlimited_since: Mapped[datetime | None] = mapped_column(UTCDateTime)
@@ -67,7 +67,7 @@ class Order(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), index=True)
-    subject: Mapped[str | None] = mapped_column(String(16))  # nach | calc
+    subject: Mapped[str | None] = mapped_column(String(16))  # nach | calc | explain | any | design (v2.4)
     status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
     wizard_step: Mapped[str | None] = mapped_column(String(24))
     task_count: Mapped[int | None] = mapped_column(Integer)
@@ -109,6 +109,15 @@ class Order(Base):
     deadline_alerted_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     unlimited: Mapped[bool] = mapped_column(Boolean, default=False)  # бесплатно по безлимиту (промокод)
     draft_warned_at: Mapped[datetime | None] = mapped_column(UTCDateTime)  # предупредили, что черновик удалится
+    # v2.4: «📎 Любая задача»: когда и кто из админов назвал цену (статус quoted)
+    quoted_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    quoted_by: Mapped[int | None] = mapped_column(BigInteger)
+    # v2.4: «🎨 Файлы и дизайн»: тип (pres|pdf|img|banner|qr), оформление презентации (custom|ssau),
+    # формат (16:9|4:3) и язык (ru|en) шаблона университета. Количество - task_count.
+    design_kind: Mapped[str | None] = mapped_column(String(16))
+    design_style: Mapped[str | None] = mapped_column(String(16))
+    design_format: Mapped[str | None] = mapped_column(String(8))
+    design_lang: Mapped[str | None] = mapped_column(String(8))
 
     @property
     def price(self) -> int | None:
@@ -294,7 +303,7 @@ class AdminLog(Base):
 
 
 class Admin(Base):
-    """Админы из бота: 1 — оператор (заказы, оплаты, поддержка), 2 — старший (всё). Владельцы — из ADMIN_IDS."""
+    """Админы из бота: 1 - оператор (заказы, оплаты, поддержка), 2 - старший (всё). Владельцы - из ADMIN_IDS."""
 
     __tablename__ = "admins"
 
@@ -309,13 +318,13 @@ class Admin(Base):
 class PinnedAdmin(Base):
     """Привязка закреплённого админа: ник из .env → Telegram id (один раз), либо id из SENIOR_ADMIN_IDS.
 
-    После привязки права — только по id: смена ника их не снимает, новый владелец ника ничего не получает.
-    revoked_at — владелец снял этого админа в боте: по нику права больше не выдаются (пока ник в .env)."""
+    После привязки права - только по id: смена ника их не снимает, новый владелец ника ничего не получает.
+    revoked_at - владелец снял этого админа в боте: по нику права больше не выдаются (пока ник в .env)."""
 
     __tablename__ = "pinned_admins"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    username: Mapped[str | None] = mapped_column(String(64), unique=True)  # в нижнем регистре; None — по id
+    username: Mapped[str | None] = mapped_column(String(64), unique=True)  # в нижнем регистре; None - по id
     user_id: Mapped[int] = mapped_column(BigInteger, index=True)
     source: Mapped[str] = mapped_column(String(16), default="username")  # username | id
     bound_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now_utc)
@@ -360,7 +369,7 @@ class TicketMessage(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     ticket_id: Mapped[int] = mapped_column(Integer, ForeignKey("tickets.id"), index=True)
-    direction: Mapped[str] = mapped_column(String(4))  # in — от клиента, out — от админа
+    direction: Mapped[str] = mapped_column(String(4))  # in - от клиента, out - от админа
     admin_id: Mapped[int | None] = mapped_column(BigInteger)
     content_type: Mapped[str] = mapped_column(String(16), default="text")
     text: Mapped[str | None] = mapped_column(Text)
@@ -388,7 +397,7 @@ class AdminMessage(Base):
 class ProfileClaim(Base):
     """Задание «Ссылка в профиле»: скрин профиля с реф-ссылкой в «О себе» → проверка админом → рубли.
 
-    Награда — один раз на аккаунт: approved/revoked закрывают задание, после rejected можно прислать снова."""
+    Награда - один раз на аккаунт: approved/revoked закрывают задание, после rejected можно прислать снова."""
 
     __tablename__ = "profile_claims"
 
@@ -439,7 +448,7 @@ class PromoPost(Base):
 
 
 class PromoPostReport(Base):
-    """Отчёт по посту: first — первый скрин поста (награда за пост), views — скрин просмотров (накопительно)."""
+    """Отчёт по посту: first - первый скрин поста (награда за пост), views - скрин просмотров (накопительно)."""
 
     __tablename__ = "promo_post_reports"
 
@@ -459,7 +468,7 @@ class PromoPostReport(Base):
 
 
 class PromoCode(Base):
-    """Одноразовый промокод на безлимит: forever — навсегда, days — на `days` дней с момента активации."""
+    """Одноразовый промокод на безлимит: forever - навсегда, days - на `days` дней с момента активации."""
 
     __tablename__ = "promo_codes"
 
@@ -468,7 +477,7 @@ class PromoCode(Base):
     kind: Mapped[str] = mapped_column(String(8))  # forever | days
     days: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now_utc)
-    created_by: Mapped[int | None] = mapped_column(BigInteger)  # None — из миграции 0005
+    created_by: Mapped[int | None] = mapped_column(BigInteger)  # None - из миграции 0005
     used_by: Mapped[int | None] = mapped_column(BigInteger, index=True)
     used_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
@@ -476,7 +485,7 @@ class PromoCode(Base):
 
 
 class PromoAttempt(Base):
-    """Попытка ввода промокода — для защиты от перебора."""
+    """Попытка ввода промокода - для защиты от перебора."""
 
     __tablename__ = "promo_attempts"
 
@@ -528,7 +537,7 @@ class AdminChat(Base):
 
 
 class FSMRecord(Base):
-    """Состояния диалогов aiogram — в БД, чтобы переживать рестарт."""
+    """Состояния диалогов aiogram - в БД, чтобы переживать рестарт."""
 
     __tablename__ = "fsm_states"
 

@@ -1,4 +1,4 @@
-"""Статистика для админа и счётчик доверия для приветствия. Всё — из БД."""
+"""Статистика для админа и счётчик доверия для приветствия. Всё - из БД."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -54,7 +54,7 @@ async def admin_report(session: AsyncSession, now: datetime) -> str:
     tags = (await session.execute(select(User.source_tag, func.count(User.id)).where(User.source == "src")
                                   .group_by(User.source_tag).order_by(func.count(User.id).desc()).limit(10))).all()
     if tags:
-        lines.append("Метки: " + ", ".join(f"{t} — {n}" for t, n in tags))
+        lines.append("Метки: " + ", ".join(f"{t}: {n}" for t, n in tags))
 
     by_status = dict((await session.execute(select(Order.status, func.count(Order.id))
                                             .where(Order.status != "draft").group_by(Order.status))).all())
@@ -84,7 +84,7 @@ async def admin_report(session: AsyncSession, now: datetime) -> str:
 
     ordered = await _count(session, select(func.count(distinct(Order.user_id))).where(
         Order.submitted_at.is_not(None)))
-    # заказы по безлимиту (промокод, 0 ₽) — не оплата: считаем их отдельно ниже
+    # заказы по безлимиту (промокод, 0 ₽) - не оплата: считаем их отдельно ниже
     paid_q = select(Order.user_id, func.count(Order.id).label("n")).where(Order.paid_at.is_not(None),
                                                                           Order.unlimited.is_(False)) \
         .group_by(Order.user_id).subquery()
@@ -92,7 +92,7 @@ async def admin_report(session: AsyncSession, now: datetime) -> str:
     repeat = await _count(session, select(func.count()).select_from(paid_q).where(paid_q.c.n >= 2))
 
     def pct(a: int, b: int) -> str:
-        return f"{round(100 * a / b)}%" if b else "—"
+        return f"{round(100 * a / b)}%" if b else "-"
 
     lines.append(f"\n🔻 Воронка: вход {total} → заказ {ordered} ({pct(ordered, total)}) → оплата {paid_users} "
                  f"({pct(paid_users, ordered)}) → повторная покупка {repeat} ({pct(repeat, paid_users)})")
@@ -101,7 +101,7 @@ async def admin_report(session: AsyncSession, now: datetime) -> str:
         Order.status.in_(("accepted", "refunded")), Order.done_at.is_not(None), Order.is_test.is_(False)))
     first = await _count(session, select(func.count(Order.id)).where(
         Order.status == "accepted", Order.had_dispute.is_(False), Order.is_test.is_(False)))
-    lines.append(f"🎓 Зачтено с первой попытки (только БД, без тестовых): {first} из {finalized} — {pct(first, finalized)}")
+    lines.append(f"🎓 Зачтено с первой попытки (только БД, без тестовых): {first} из {finalized}, {pct(first, finalized)}")
 
     explain = await _count(session, select(func.count(Order.id)).where(Order.subject == "explain",
                                                                       Order.status != "draft"))
@@ -143,7 +143,7 @@ async def admin_report(session: AsyncSession, now: datetime) -> str:
 
 
 async def unlimited_line(session: AsyncSession, now: datetime) -> str:
-    """Безлимит по промокодам — отдельно от выручки: такие заказы бесплатные (0 ₽)."""
+    """Безлимит по промокодам - отдельно от выручки: такие заказы бесплатные (0 ₽)."""
     forever = await _count(session, select(func.count(User.id)).where(User.unlimited_forever.is_(True)))
     dated = await _count(session, select(func.count(User.id)).where(User.unlimited_forever.is_(False),
                                                                     User.unlimited_until > now))

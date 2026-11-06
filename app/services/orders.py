@@ -1,4 +1,7 @@
-"""Жизненный цикл заказа: черновик → на проверке → ждёт оплаты → оплачен → в работе → готово → зачтено/спор/возврат."""
+"""Жизненный цикл заказа: черновик → на проверке → ждёт оплаты → оплачен → в работе → готово → зачтено/спор/возврат.
+
+v2.4, «📎 Любая задача»: черновик → ждёт оценки → оценено (цену назвал админ) → оплачен → дальше как обычно.
+"""
 from __future__ import annotations
 
 import secrets
@@ -16,23 +19,33 @@ from app.services import slots
 from app.services.admin_log import log_admin
 from app.services.ledger import lock_user
 from app.services.locks import app_lock
-from app.services.pricing import calc_price, hours_between, urgency_from_settings
+from app.services.pricing import calc_price, hours_between, urgency_for_subject
 from app.services.referrals import RewardResult, reward_for_delivered
 from app.utils.timeutil import local_today, to_local
 
-ACTIVE = ("review", "awaiting_payment", "paid", "in_work", "dispute")
+# v2.4: «📎 Любая задача»: estimate (ждёт оценки) → админ называет цену → quoted (оценено) → оплата → paid
+ESTIMATE, QUOTED = "estimate", "quoted"
+ACTIVE = (ESTIMATE, QUOTED, "review", "awaiting_payment", "paid", "in_work", "dispute")
 QUEUE_DEFAULT = ACTIVE
 PAID_LIKE = ("paid", "in_work", "done", "accepted", "dispute")
 REFUNDABLE = ("paid", "in_work", "done", "dispute")
-CANCELLABLE = ("review", "awaiting_payment")
-MAX_FILES = 30  # фото условия: альбомы принимаем целиком (в Telegram альбом — до 10 штук)
+CANCELLABLE = (ESTIMATE, QUOTED, "review", "awaiting_payment")
+PAYABLE = ("awaiting_payment", QUOTED)  # можно оплатить: счёт выставлен или цена названа
+MAX_FILES = 30  # фото условия: альбомы принимаем целиком (в Telegram альбом - до 10 штук)
 MAX_TASKS = 30
 EXPLAIN = "explain"  # «Объяснение материала»: одна позиция, без варианта и конспектов
 EXPLAIN_ALL = "Объясните всю тему целиком"
+ANY = "any"  # v2.4: «📎 Любая задача»: условие любого предмета, цену называет админ
+MAX_ANY_TEXT = 3000  # текст условия любой задачи (несколько сообщений подряд склеиваем)
+QUOTE_MIN, QUOTE_MAX = 100, 100_000 * 100  # цена оценки: от 1 ₽ до 100 000 ₽ (копейки)
 
 
 def is_explain(order: Order | None) -> bool:
     return order is not None and order.subject == EXPLAIN
+
+
+def is_any(order: Order | None) -> bool:
+    return order is not None and order.subject == ANY
 
 
 class OrderError(Exception):
@@ -61,7 +74,7 @@ async def _require(session: AsyncSession, order_id: int, statuses: tuple[str, ..
     if order is None or (user_id is not None and order.user_id != user_id):
         raise OrderError("Заказ не найден.")
     if statuses is not None and order.status not in statuses:
-        raise OrderError("Статус заказа уже изменился — открой его заново.")
+        raise OrderError("Статус заказа уже изменился: открой его заново.")
     return order
 
 
@@ -73,7 +86,7 @@ async def get_draft(session: AsyncSession, user_id: int) -> Order | None:
 
 
 async def create_draft(session: AsyncSession, user_id: int, subject: str | None, now: datetime) -> Order:
-    """subject=None — фото прислали раньше, чем выбрали предмет: черновик всё равно сохраняем."""
+    """subject=None - фото прислали раньше, чем выбрали предмет: черновик всё равно сохраняем."""
     order = Order(user_id=user_id, subject=subject, status="draft", wizard_step="photos",
                   task_count=1 if subject == EXPLAIN else None, created_at=now, updated_at=now)
     session.add(order)
@@ -128,7 +141,7 @@ class DraftPrice:
 
 def draft_price(order: Order, s, now: datetime, has_lecture: bool, has_practice: bool) -> DraftPrice:  # noqa: ANN001
     ppt = s.price_for(order.subject)
-    urg = urgency_from_settings(s, hours_between(now, order.deadline_at))
+    urg = urgency_for_subject(s, order.subject, hours_between(now, order.deadline_at)) if order.deadline_at else 100
     disc = 0
     if s.notes_discount_for(order.subject):
         disc = (s.discount_lecture_pct if has_lecture else 0) + (s.discount_practice_pct if has_practice else 0)
@@ -151,9 +164,9 @@ async def submit_order(session: AsyncSession, order_id: int, s, now: datetime) -
         if not order.subject or not order.task_count or not order.deadline_at \
                 or await count_files(session, order.id, "condition") == 0 \
                 or (order.subject == EXPLAIN and not (order.comment or "").strip()):
-            raise OrderError("Заказ заполнен не полностью — пройди шаги ещё раз.")
+            raise OrderError("Заказ заполнен не полностью: пройди шаги ещё раз.")
         if order.deadline_at <= now:
-            raise OrderError("Дедлайн уже прошёл — выбери новый.")
+            raise OrderError("Дедлайн уже прошёл: выбери новый.")
         user = await session.get(User, order.user_id, populate_existing=True)
         unlimited = bool(user and user.unlimited_active(now))
         intake = await slots.intake_state(session, s, now, unlimited=unlimited)
@@ -162,7 +175,7 @@ async def submit_order(session: AsyncSession, order_id: int, s, now: datetime) -
         if intake.remaining is not None and order.task_count > intake.remaining:
             raise NotEnoughSlots(intake.remaining)
         order.price_per_task = s.price_for(order.subject)
-        order.urgency_pct = urgency_from_settings(s, hours_between(now, order.deadline_at))
+        order.urgency_pct = urgency_for_subject(s, order.subject, hours_between(now, order.deadline_at))
         if s.notes_discount_for(order.subject):
             order.lecture_discount_pct = int(s.discount_lecture_pct)
             order.practice_discount_pct = int(s.discount_practice_pct)
@@ -178,6 +191,54 @@ async def submit_order(session: AsyncSession, order_id: int, s, now: datetime) -
         order.draft_warned_at = None
         order.slot_date = local_today(now)
         order.wizard_step = None
+        await session.commit()
+        return order
+
+
+async def submit_any(session: AsyncSession, order_id: int, s, now: datetime) -> Order:  # noqa: ANN001
+    """v2.4: «📎 Любая задача» → статус «ждёт оценки». Срок и цену не считаем: цену назовёт админ.
+    Безлимит (промокод) и «Месяц бесплатно» на такие задачи не действуют: цена у каждой своя."""
+    async with app_lock():
+        order = await get_order(session, order_id)
+        if order is None or order.status != "draft" or order.subject != ANY:
+            raise OrderError("Этот черновик уже отправлен или удалён.")
+        if await count_files(session, order.id, "condition") == 0 and not (order.comment or "").strip():
+            raise OrderError(texts.ANY_NEED_CONTENT)
+        intake = await slots.intake_state(session, s, now)
+        if not intake.open:
+            raise IntakeClosed(intake)
+        if intake.remaining is not None and intake.remaining < 1:
+            raise NotEnoughSlots(intake.remaining)
+        order.task_count = 1
+        order.price_per_task = order.urgency_pct = order.price_auto = order.price_final = None
+        order.lecture_discount_pct = order.practice_discount_pct = order.discount_pct = 0
+        order.lecture_status = order.practice_status = "none"
+        order.unlimited = False
+        order.status = ESTIMATE
+        order.submitted_at = now
+        order.draft_warned_at = None
+        order.slot_date = local_today(now)
+        order.wizard_step = None
+        await session.commit()
+        return order
+
+
+async def quote(session: AsyncSession, order_id: int, price: int, now: datetime, admin_id: int) -> Order:
+    """v2.4: админ называет цену любой задачи (рубли → копейки). Можно поменять, пока клиент не оплатил."""
+    if not QUOTE_MIN <= int(price) <= QUOTE_MAX:
+        raise OrderError(texts.QUOTE_RANGE)
+    async with app_lock():
+        order = await _require(session, order_id, (ESTIMATE, QUOTED))
+        if order.subject != ANY:
+            raise OrderError("Цену так назначают только для «📎 Любой задачи».")
+        old = order.price_final
+        await _release(session, order, now)  # если цену меняют: старый счёт больше не действует
+        order.price_per_task = order.price_auto = order.price_final = int(price)
+        order.task_count, order.urgency_pct, order.discount_pct, order.price_override = 1, 100, 0, None
+        order.status = QUOTED
+        order.quoted_at = order.invoiced_at = now
+        order.quoted_by = admin_id
+        log_admin(session, admin_id, "quote_price", "order", order.id, price=int(price), old=old)
         await session.commit()
         return order
 
@@ -199,7 +260,7 @@ async def set_note_status(session: AsyncSession, order_id: int, which: str, appr
 
 async def set_task_count(session: AsyncSession, order_id: int, count: int, admin_id: int) -> Order:
     if not 1 <= count <= MAX_TASKS:
-        raise OrderError(f"Количество — от 1 до {MAX_TASKS}.")
+        raise OrderError(f"Количество: от 1 до {MAX_TASKS}.")
     order = await _require(session, order_id, ("review",))
     old = order.task_count
     order.task_count = count
@@ -225,11 +286,11 @@ async def issue_invoice(session: AsyncSession, order_id: int, s, now: datetime, 
         free = 0
         if user.unlimited_active(now):
             order.unlimited = True
-        # по безлимиту цена 0 ₽ — скидка за конспекты ни на что не влияет, проверять их не обязательно
+        # по безлимиту цена 0 ₽ - скидка за конспекты ни на что не влияет, проверять их не обязательно
         if not order.unlimited and "pending" in (order.lecture_status, order.practice_status):
-            raise OrderError("Сначала проверь конспекты — одобри или отклони.")
-        # «Месяц бесплатно» — это бесплатные задачи; объяснение материала задачей не считается.
-        # Безлимит (промокод) — заказ бесплатный целиком, «Месяц бесплатно» не тратим.
+            raise OrderError("Сначала проверь конспекты: одобри или отклони.")
+        # «Месяц бесплатно» - это бесплатные задачи; объяснение материала задачей не считается.
+        # Безлимит (промокод) - заказ бесплатный целиком, «Месяц бесплатно» не тратим.
         if order.unlimited:
             pass
         elif order.subject != EXPLAIN and user.free_month_until and user.free_month_until > now \
@@ -346,7 +407,7 @@ async def mark_done(session: AsyncSession, order_id: int, s, now: datetime,  # n
 
 
 def can_finish(order: Order) -> bool:
-    """Решение есть — можно выдавать. Объяснение можно выдать и сообщениями в чате (без файла)."""
+    """Решение есть - можно выдавать. Объяснение можно выдать и сообщениями в чате (без файла)."""
     return bool(order.solution_entry) or (order.subject == EXPLAIN and order.chat_replies > 0)
 
 
@@ -416,7 +477,7 @@ async def status_counts(session: AsyncSession) -> dict[str, int]:
 
 
 async def nearest_deadline(session: AsyncSession, now: datetime) -> Order | None:
-    """Ближайший дедлайн среди оплаченных/в работе/спорных — для сводки админа."""
+    """Ближайший дедлайн среди оплаченных/в работе/спорных - для сводки админа."""
     return await session.scalar(select(Order).where(Order.status.in_(("paid", "in_work", "dispute")),
                                                     Order.deadline_at.is_not(None))
                                 .order_by(Order.deadline_at).limit(1))

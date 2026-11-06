@@ -1,11 +1,11 @@
-"""«Это задание?» — фото, файл или текст, присланные вне оформления заказа и вне поддержки.
+"""«Это задание?» - фото, файл или текст, присланные вне оформления заказа и вне поддержки.
 
 В 2.2 такие сообщения получали «не понял» и терялись. Теперь каждое сразу сохраняется (stray_messages), а клиент
-получает вопрос «📥 Оформить заказ / 💬 Отправить в поддержку» (альбом — одним вопросом):
-• «📥 Оформить заказ» — фото и файлы ложатся в условие черновика (создаём, если его нет), текст — в комментарий,
+получает вопрос «📥 Оформить заказ / 💬 Отправить в поддержку» (альбом - одним вопросом):
+• «📥 Оформить заказ» - фото и файлы ложатся в условие черновика (создаём, если его нет), текст - в комментарий,
   и оформление продолжается с нужного шага;
-• «💬 Отправить в поддержку» — всё уходит команде обычным обращением (как /support).
-Нет ответа за stray_timeout_minutes (по умолчанию 10 мин) — планировщик сам передаёт сообщения в поддержку
+• «💬 Отправить в поддержку» - всё уходит команде обычным обращением (как /support).
+Нет ответа за stray_timeout_minutes (по умолчанию 10 мин) - планировщик сам передаёт сообщения в поддержку
 (flush_stray), а клиенту пишет, что ничего не потерялось."""
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ router = Router(name="stray")
 
 
 def attachable(it: StrayMessage) -> bool:
-    """Можно положить в заказ: текст — в комментарий, фото и PDF/картинки — в условие."""
+    """Можно положить в заказ: текст - в комментарий, фото и PDF/картинки - в условие."""
     return it.content_type == "text" or (it.file_type in ("photo", "document") and bool(it.file_id))
 
 
@@ -54,7 +54,7 @@ def _record(message: Message, user_id: int, now: datetime) -> StrayMessage:
     if f is not None:  # фото или документ, который годится в условие заказа
         sm.file_type, sm.file_id, sm.file_unique_id = f.file_type, f.file_id, f.unique_id
         sm.file_name, sm.mime_type, sm.size = f.file_name, f.mime_type, f.size
-    elif message.document is not None:  # файл другого типа — только в поддержку
+    elif message.document is not None:  # файл другого типа - только в поддержку
         sm.file_name, sm.mime_type = message.document.file_name, message.document.mime_type
     return sm
 
@@ -172,7 +172,7 @@ async def stray_order(call: CallbackQuery, callback_data: StrayCb, state: FSMCon
             rest.append(it)
         it.order_id = draft.id
     await session.commit()
-    if rest:  # не подходит в условие (например, .docx) — в поддержку, чтобы не потерялось
+    if rest:  # не подходит в условие (например, .docx) - в поддержку, чтобы не потерялось
         for it in rest:
             it.status = "support"
         await to_support(bot, session, config, db_user, rest, now, texts.STRAY_ADMIN_NOTE)
@@ -180,7 +180,7 @@ async def stray_order(call: CallbackQuery, callback_data: StrayCb, state: FSMCon
     await drafts.refresh_menu(session, db_user.id)
     note = texts.STRAY_TO_ORDER.format(n=photos) if photos else texts.STRAY_TO_ORDER_TEXT if text_saved else None
     intake = await slots.intake_state(session, s, now, unlimited=db_user.unlimited_active(now))
-    if not intake.open:  # приём закрыт — черновик сохранён, вернуться можно позже
+    if not intake.open:  # приём закрыт - черновик сохранён, вернуться можно позже
         await call.message.answer("\n\n".join(x for x in (note, wizard.closed_text(intake)) if x),
                                   reply_markup=wizard.remind_kb())
         return
@@ -191,11 +191,10 @@ async def stray_order(call: CallbackQuery, callback_data: StrayCb, state: FSMCon
     await wizard.goto(step, call.message, state, session, draft, s, db_user, note=note)
 
 
-# ------------------------------------------------------------------ планировщик: без ответа — в поддержку
+# ------------------------------------------------------------------ планировщик: без ответа - в поддержку
 async def flush_stray(bot: Bot, config: Config, sessionmaker: async_sessionmaker[AsyncSession],
                       now: datetime | None = None) -> int:
-    """Раз в минуту: «Это задание?» без ответа дольше stray_timeout_minutes (по последнему сообщению пачки) —
-    передаём в поддержку и сообщаем клиенту. Возвращает, скольким клиентам."""
+    """Раз в минуту: «Это задание?» без ответа дольше stray_timeout_minutes (по последнему сообщению пачки) -     передаём в поддержку и сообщаем клиенту. Возвращает, скольким клиентам."""
     now = now or now_utc()
     done = 0
     async with sessionmaker() as session:

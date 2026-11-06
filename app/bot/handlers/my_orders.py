@@ -14,11 +14,13 @@ from app.bot.callbacks import AdminCb, MyOrderCb, PayCb, SupCb
 from app.bot.handlers.common import menu_router
 from app.bot.keyboards import cb, ik, main_menu, order_alert_kb, pager, solution_button
 from app.bot.notify import mark_headers, notify_admins, remember_all, send_files, staff_targets
-from app.bot.render import order_card, order_line
+from app.bot.designs import result_kb
+from app.bot.render import order_card, order_line, status_label
 from app.bot.states import DisputeSG
 from app.bot.ui import drop_kb, show
 from app.config import Config
 from app.db.models import Order, User
+from app.services import design as dsvc
 from app.services import orders as svc
 from app.services import solutions
 from app.services.users import display_name
@@ -30,7 +32,7 @@ router = Router(name="my_orders")
 M = texts.MAIN_MENU
 PER_PAGE = 8
 SOLUTION_VISIBLE = ("done", "accepted", "dispute", "in_work")
-STATUS_CHANGED = "Статус заказа уже изменился — открой его в «📦 Мои заказы»."
+STATUS_CHANGED = "Статус заказа уже изменился: открой его в «📦 Мои заказы»."
 
 
 def solution_visible(order: Order) -> bool:
@@ -40,6 +42,10 @@ def solution_visible(order: Order) -> bool:
 def status_hint(order: Order) -> str | None:
     if svc.is_explain(order) and order.status in texts.EXPLAIN_STATUS_HINT:
         return texts.EXPLAIN_STATUS_HINT[order.status]
+    if svc.is_any(order) and order.status in texts.ANY_STATUS_HINT:
+        return texts.ANY_STATUS_HINT[order.status]
+    if dsvc.is_design(order):
+        return texts.DESIGN_STATUS_HINT.get(order.status) or texts.STATUS_HINT.get(order.status)
     hint = texts.STATUS_HINT.get(order.status)
     if hint and "{notes}" in hint:
         pending = order.lecture_status == "pending" or order.practice_status == "pending"
@@ -51,16 +57,15 @@ async def list_view(session: AsyncSession, user_id: int, page: int) -> tuple[str
     rows, total = await svc.user_orders(session, user_id, page, PER_PAGE)
     draft = await svc.get_draft(session, user_id)
     if not rows and draft is None:
-        return ("📦 Заказов пока нет.\nЖми «📝 Заказать» — разберём задачу, или «📸 Объяснить материал» — "
-                "объясним тему по фото лекции 🙂"), None
-    lines = ["📦 <b>Мои заказы</b>"]
+        return texts.MY_ORDERS_EMPTY, None
+    lines = ["📦 <b>Мои заказы</b>", ""]
     if draft is not None:
         what = M["explain"] if svc.is_explain(draft) else M["order"]
-        lines.append(f"📝 Есть незаконченная заявка — продолжить можно через «{what}».")
+        lines.append(f"📝 Есть незаконченная заявка, продолжить можно через «{what}».")
     buttons = []
     for o in rows:
         lines.append(order_line(o))
-        buttons.append([cb(f"#{o.id} · {texts.STATUS.get(o.status, o.status)}",
+        buttons.append([cb(f"#{o.id} · {status_label(o)}",
                            MyOrderCb(action="card", id=o.id, page=page))])
     if rows:
         lines.append("\n<i>Нажми на заказ, чтобы открыть подробности.</i>")
@@ -70,11 +75,13 @@ async def list_view(session: AsyncSession, user_id: int, page: int) -> tuple[str
 def card_kb(order: Order, config: Config, page: int) -> InlineKeyboardMarkup:
     explain = svc.is_explain(order)
     rows = []
-    if order.status == "awaiting_payment" and order.price_final:
+    if order.status in svc.PAYABLE and order.price_final:
         rows.append([cb(f"{texts.PAY_BTN} · {fmt_rub(order.price_final)}", PayCb(action="order", id=order.id))])
     if solution_visible(order):
         rows.append([solution_button(config, order.solution_token, MyOrderCb(action="solution", id=order.id))])
-    if order.status == "done":
+    if order.status == "done" and dsvc.is_design(order):  # v2.4: «✅ Принять» / «🔁 Нужны правки»
+        rows += result_kb(order.id).inline_keyboard
+    elif order.status == "done":
         if explain:
             rows.append([cb(texts.EXPLAIN_ACCEPT_BTN, MyOrderCb(action="accept", id=order.id, page=page)),
                          cb(texts.EXPLAIN_ASK_BTN, SupCb(action="order", id=order.id))])
@@ -84,7 +91,8 @@ def card_kb(order: Order, config: Config, page: int) -> InlineKeyboardMarkup:
     if order.status != "cancelled" and not (explain and order.status == "done"):
         rows.append([cb("💬 Вопрос по заказу", SupCb(action="order", id=order.id))])
     if order.status in svc.CANCELLABLE:
-        rows.append([cb("✖️ Отменить заказ", MyOrderCb(action="cancel", id=order.id, page=page))])
+        label = texts.QUOTE_DECLINE_BTN if order.status == svc.QUOTED else "✖️ Отменить заказ"
+        rows.append([cb(label, MyOrderCb(action="cancel", id=order.id, page=page))])
     rows.append([cb("⬅️ К списку", MyOrderCb(action="list", page=page))])
     return ik(*rows)
 
@@ -167,24 +175,30 @@ async def cb_cancel(call: CallbackQuery, callback_data: MyOrderCb, session: Asyn
         await call.answer(texts.NOT_FOUND, show_alert=True)
         return
     await call.answer()
-    await show(call, texts.CANCEL_CONFIRM.format(id=order.id), ik(
-        [cb("Да, отменить", MyOrderCb(action="cancel_yes", id=order.id, page=callback_data.page)),
+    quoted = order.status == svc.QUOTED
+    await show(call, (texts.QUOTE_DECLINE_CONFIRM if quoted else texts.CANCEL_CONFIRM).format(id=order.id), ik(
+        [cb(texts.QUOTE_DECLINE_YES if quoted else "Да, отменить",
+            MyOrderCb(action="cancel_yes", id=order.id, page=callback_data.page)),
          cb("Нет", MyOrderCb(action="card", id=order.id, page=callback_data.page))]))
 
 
 @router.callback_query(MyOrderCb.filter(F.action == "cancel_yes"))
 async def cb_cancel_yes(call: CallbackQuery, callback_data: MyOrderCb, session: AsyncSession, db_user: User,
                         bot: Bot, config: Config) -> None:
+    before = await own_order(session, callback_data.id, db_user)
+    declined = before is not None and svc.is_any(before)
     try:
         order = await svc.cancel_by_user(session, callback_data.id, db_user.id, now_utc())
     except svc.OrderError as e:
         await call.answer(str(e), show_alert=True)
         return
-    await call.answer(texts.ORDER_CANCELLED.format(id=order.id))
+    await call.answer((texts.QUOTE_DECLINED if declined else texts.ORDER_CANCELLED).format(id=order.id))
     await show(call, await card_text(session, order), card_kb(order, config, callback_data.page))
-    await mark_headers(bot, session, config, "order", order.id, f"✖️ Клиент отменил · {to_local(now_utc()):%H:%M}",
+    await mark_headers(bot, session, config, "order", order.id,
+                       f"✖️ Клиент {'отказался' if declined else 'отменил'} · {to_local(now_utc()):%H:%M}",
                        markup_for=lambda _lvl: order_alert_kb(order.id))
-    await notify_admins(bot, config, texts.ADMIN_CANCELLED.format(user=display_name(db_user), id=order.id),
+    await notify_admins(bot, config, (texts.ADMIN_QUOTE_DECLINED if declined else texts.ADMIN_CANCELLED).format(
+                            user=display_name(db_user), id=order.id),
                         markup_for=lambda _lvl: ik([cb("📦 Открыть заказ", AdminCb(s="o", a="open", id=order.id))]))
 
 
@@ -206,7 +220,7 @@ async def cb_accept(call: CallbackQuery, callback_data: MyOrderCb, session: Asyn
     await call.message.answer(texts.EXPLAIN_ACCEPTED if explain else texts.ACCEPTED, reply_markup=kb)
     what = f"🎓 Объяснение #{order.id}: клиенту всё понятно" if explain else f"🎓 Заказ #{order.id} зачли"
     await mark_headers(bot, session, config, "order", order.id, what, markup_for=lambda _lvl: order_alert_kb(order.id))
-    await notify_admins(bot, config, f"{what} — {display_name(db_user)}.")
+    await notify_admins(bot, config, f"{what}: {display_name(db_user)}.")
 
 
 @router.callback_query(MyOrderCb.filter(F.action == "dispute"))
@@ -232,7 +246,7 @@ async def cb_dispute_cancel(call: CallbackQuery, state: FSMContext) -> None:
 
 
 def dispute_kb(order_id: int, level: int) -> InlineKeyboardMarkup:
-    """Кнопки для админов: 1 уровень — переделать, 2 уровень — ещё и вернуть деньги."""
+    """Кнопки для админов: 1 уровень - переделать, 2 уровень - ещё и вернуть деньги."""
     first = [cb("🔁 Переделать", AdminCb(s="o", a="redo", id=order_id))]
     if level >= 2:
         first.append(cb("↩️ Вернуть деньги", AdminCb(s="o", a="refund", id=order_id)))
@@ -263,7 +277,7 @@ async def dispute_file(message: Message, state: FSMContext, session: AsyncSessio
         sent = await notify_admins(bot, config, header, markup_for=lambda lvl: dispute_kb(order.id, lvl))
         remember_all(session, sent, "dispute", order.id, db_user.id, header)
         await session.commit()
-        await mark_headers(bot, session, config, "order", order.id, "⚠️ Клиент: «Не зачли» — спор",
+        await mark_headers(bot, session, config, "order", order.id, "⚠️ Клиент: «Не зачли», спор",
                            markup_for=lambda _lvl: order_alert_kb(order.id))
     for admin_id, level in staff_targets(config):
         try:

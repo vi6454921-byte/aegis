@@ -17,12 +17,12 @@ from app.config import Config
 
 Btn = InlineKeyboardButton
 
-# Кому сейчас отвечаем: админу — показываем в нижнем меню «🛡 Админка». Ставит UserMiddleware на каждый апдейт.
+# Кому сейчас отвечаем: админу - показываем в нижнем меню «🛡 Админка». Ставит UserMiddleware на каждый апдейт.
 # Сообщения ДРУГИМ людям (уведомления клиентам из админки) должны передавать admin=False явно.
 _menu_admin: ContextVar[bool] = ContextVar("aegis_menu_admin", default=False)
 
 
-# Черновик заказа того, кому отвечаем: число фото условия (None — черновика нет). Ставит UserMiddleware,
+# Черновик заказа того, кому отвечаем: число фото условия (None - черновика нет). Ставит UserMiddleware,
 # обновляют обработчики, которые меняют черновик. Нижнее меню показывает «📝 Продолжить оформление заказа».
 _menu_draft: ContextVar[int | None] = ContextVar("aegis_menu_draft", default=None)
 
@@ -48,18 +48,18 @@ def cb(text: str, data) -> InlineKeyboardButton:  # noqa: ANN001
 
 
 def main_menu(admin: bool | None = None, draft: int | None = None) -> ReplyKeyboardMarkup:
-    """Нижнее меню. Сверху — «📝 Продолжить оформление заказа (фото: N)», если есть черновик, дальше главное
-    действие, у админов — ещё кнопка «🛡 Админка».
+    """Нижнее меню. Сверху - «📝 Продолжить оформление заказа (фото: N)», если есть черновик, дальше главное
+    действие, у админов - ещё кнопка «🛡 Админка».
 
-    admin=None — меню для того, кому сейчас отвечаем (роль и черновик — из контекста апдейта).
-    Явный admin=True/False — меню для другого человека: черновик показываем, только если передан draft."""
+    admin=None - меню для того, кому сейчас отвечаем (роль и черновик - из контекста апдейта).
+    Явный admin=True/False - меню для другого человека: черновик показываем, только если передан draft."""
     own = admin is None
     if own:
         admin = _menu_admin.get()
         if draft is None:
             draft = _menu_draft.get()
     m = texts.MAIN_MENU
-    rows = [[m["order"], m["explain"]], [m["my_orders"], m["balance"]], [m["invite"], m["gifts"]],
+    rows = [[m["order"], m["explain"]], [m["design"]], [m["my_orders"], m["balance"]], [m["invite"], m["gifts"]],
             [m["promo"], m["help"]]]
     if draft is not None:
         rows.insert(0, [texts.DRAFT_MENU_BTN.format(n=draft)])
@@ -101,7 +101,16 @@ def pager(page: int, total: int, per_page: int, make) -> list[InlineKeyboardButt
 
 
 def order_alert_kb(order_id: int) -> InlineKeyboardMarkup:
-    """Кнопки под уведомлением админам о заказе. «✉️ Ответить» — режим чата с клиентом по заказу."""
+    """Кнопки под уведомлением админам о заказе. «✉️ Ответить» - режим чата с клиентом по заказу."""
     return ik([cb("📦 Открыть заказ", AdminCb(s="o", a="open", id=order_id)),
+               cb("🖼 Файлы", AdminCb(s="o", a="files", id=order_id))],
+              [cb(texts.CHAT_BTN, AdminCb(s="c", a="o", id=order_id))])
+
+
+def any_alert_kb(order_id: int) -> InlineKeyboardMarkup:
+    """v2.4: под уведомлением о «📎 Любой задаче»: назначить цену или отказать, открыть, файлы, ответить."""
+    return ik([cb(texts.QUOTE_BTN, AdminCb(s="o", a="quote", id=order_id)),
+               cb(texts.ANY_REJECT_BTN, AdminCb(s="o", a="reject", id=order_id))],
+              [cb("📦 Открыть заказ", AdminCb(s="o", a="open", id=order_id)),
                cb("🖼 Файлы", AdminCb(s="o", a="files", id=order_id))],
               [cb(texts.CHAT_BTN, AdminCb(s="c", a="o", id=order_id))])

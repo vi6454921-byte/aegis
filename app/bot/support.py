@@ -1,9 +1,9 @@
 """Переписка клиент ↔ команда через бота.
 
-Клиент пишет (поддержка, вопрос по оплате или по заказу, обжалование бана) — у всех админов появляется
-уведомление: заголовок с текстом и кнопками «✉️ Ответить» / «✅ Закрыть», вложения — копией ниже.
+Клиент пишет (поддержка, вопрос по оплате или по заказу, обжалование бана) - у всех админов появляется
+уведомление: заголовок с текстом и кнопками «✉️ Ответить» / «✅ Закрыть», вложения - копией ниже.
 Админ отвечает кнопкой или просто свайпом-ответом на уведомление. Клиенту ответ приходит от имени бота
-с кнопкой «💬 Ответить», и он тоже может ответить свайпом — всё склеивается в одно обращение.
+с кнопкой «💬 Ответить», и он тоже может ответить свайпом - всё склеивается в одно обращение.
 """
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def message_text(m: Message) -> str | None:
 
 
 def message_html(m: Message) -> str:
-    """Текст/подпись с форматированием отправителя (жирный, ссылки) — для пересылки от имени бота."""
+    """Текст/подпись с форматированием отправителя (жирный, ссылки) - для пересылки от имени бота."""
     try:
         if m.text is not None:
             return m.html_text
@@ -86,7 +86,7 @@ def closed_kb(ticket: Ticket, level: int) -> InlineKeyboardMarkup:
 
 @dataclass
 class Item:
-    """Сообщение клиента для уведомления админам (когда исходного Message уже нет — например, из БД)."""
+    """Сообщение клиента для уведомления админам (когда исходного Message уже нет - например, из БД)."""
     chat_id: int
     message_id: int
     content_type: str
@@ -107,8 +107,9 @@ async def staff_header(session: AsyncSession, ticket: Ticket, user: User, m: Mes
     if ticket.order_id:
         order = await session.get(Order, ticket.order_id)
         if order is not None:
-            lines.append(f"Заказ #{order.id}: {texts.SUBJECTS.get(order.subject or '', '—')} · "
-                         f"{texts.STATUS.get(order.status, order.status)}")
+            from app.bot.render import status_label  # noqa: PLC0415
+
+            lines.append(f"Заказ #{order.id}: {texts.SUBJECTS.get(order.subject or '', '-')} · {status_label(order)}")
     if note:
         lines.append(note)
     parts = items if items is not None else ([item_of(m)] if m is not None else [])
@@ -117,7 +118,7 @@ async def staff_header(session: AsyncSession, ticket: Ticket, user: User, m: Mes
         if it.content_type != "text":
             media[it.content_type] = media.get(it.content_type, 0) + 1
     for ct, n in media.items():
-        lines.append(f"{MEDIA_LABEL.get(ct, ct)}" + (f" ×{n}" if n > 1 else "") + " — ниже ⬇️")
+        lines.append(f"{MEDIA_LABEL.get(ct, ct)}" + (f" ×{n}" if n > 1 else "") + ", ниже ⬇️")
     body = "\n\n".join(it.text for it in parts if it.text)
     if body:
         cut = body if len(body) <= MAX_TEXT else body[:MAX_TEXT] + "…"
@@ -127,27 +128,29 @@ async def staff_header(session: AsyncSession, ticket: Ticket, user: User, m: Mes
 
 
 async def to_staff(bot: Bot, session: AsyncSession, config: Config, ticket: Ticket, user: User, m: Message,
-                   *, new: bool, header: bool = True, min_level: int = 1) -> int:
-    """Уведомление админам о сообщении клиента. header=False — только копия вложения (2-е фото альбома).
+                   *, new: bool, header: bool = True, min_level: int = 1, note: str | None = None,
+                   only: set[int] | None = None) -> int:
+    """Уведомление админам о сообщении клиента. header=False - только копия вложения (2-е фото альбома).
     Без commit (запоминает сообщения в admin_messages). Возвращает, скольким админам дошло."""
     return await items_to_staff(bot, session, config, ticket, user, [item_of(m)], new=new, header=header,
-                                min_level=min_level)
+                                min_level=min_level, note=note, only=only)
 
 
 async def items_to_staff(bot: Bot, session: AsyncSession, config: Config, ticket: Ticket, user: User,
                          items: list[Item], *, new: bool, header: bool = True, min_level: int = 1,
-                         note: str | None = None) -> int:
-    """То же для нескольких сообщений сразу: один заголовок, вложения — копиями ниже. Без commit."""
+                         note: str | None = None, only: set[int] | None = None) -> int:
+    """То же для нескольких сообщений сразу: один заголовок, вложения - копиями ниже. Без commit.
+    only - только этим админам (v2.4: правки по заказу «🎨 Файлы и дизайн» - его исполнителю)."""
     delivered = 0
     if header:
         text = await staff_header(session, ticket, user, None, new, items=items, note=note)
-        sent = await notify_admins(bot, config, text, min_level=min_level,
+        sent = await notify_admins(bot, config, text, min_level=min_level, only=only,
                                    markup_for=lambda lvl: staff_kb(ticket, lvl, banned=user.is_banned))
         remember_all(session, sent, "ticket", ticket.id, user.id, text)
         delivered = len(sent)
     media = [it for it in items if it.content_type != "text"]
     if media:
-        for admin_id, _lvl in staff_targets(config, min_level):
+        for admin_id, _lvl in staff_targets(config, min_level, only):
             for it in media:
                 try:
                     copy = await bot.copy_message(admin_id, it.chat_id, it.message_id)
@@ -195,9 +198,9 @@ def _mid(value) -> int:  # noqa: ANN001
 
 
 async def to_user(bot: Bot, ticket: Ticket, m: Message, header: str) -> Sent:
-    """Доставляет сообщение админа клиенту от имени бота с пометкой header ("" — без пометки).
-    Текст — новым сообщением, фото/файлы/видео/голосовые — копией с подписью, остальное (стикер, кружок,
-    геолокация…) — пометкой и копией. Под сообщением — кнопка «💬 Ответить»."""
+    """Доставляет сообщение админа клиенту от имени бота с пометкой header ("" - без пометки).
+    Текст - новым сообщением, фото/файлы/видео/голосовые - копией с подписью, остальное (стикер, кружок,
+    геолокация…) - пометкой и копией. Под сообщением - кнопка «💬 Ответить»."""
     kb = user_reply_kb(ticket.id)
     ct = content_type(m)
     sent = Sent()
@@ -232,8 +235,8 @@ async def to_user(bot: Bot, ticket: Ticket, m: Message, header: str) -> Sent:
 
 
 async def album_to_user(bot: Bot, ticket: Ticket, msgs: list[Message], header: str) -> Sent:
-    """Альбом админа (до 10 фото/видео/файлов) — целиком, одним альбомом через copyMessages; пометка и кнопка
-    «💬 Ответить» — сообщением над ним (у альбома в Telegram не бывает кнопок)."""
+    """Альбом админа (до 10 фото/видео/файлов) - целиком, одним альбомом через copyMessages; пометка и кнопка
+    «💬 Ответить» - сообщением над ним (у альбома в Telegram не бывает кнопок)."""
     sent = Sent()
     try:
         head = await bot.send_message(ticket.user_id, header or texts.SUPPORT_FROM_TEAM,
@@ -270,7 +273,7 @@ async def reply_to_ticket(bot: Bot, session: AsyncSession, config: Config, ticke
 
 async def mark_answered(bot: Bot, session: AsyncSession, config: Config, ticket: Ticket, admin: User | None,
                         admin_id: int, now: datetime) -> None:
-    """У всех админов на уведомлениях об обращении — «✅ Ответил(а): Аня · 14:05»."""
+    """У всех админов на уведомлениях об обращении - «✅ Ответил(а): Аня · 14:05»."""
     user = await session.get(User, ticket.user_id)
     marker = f"✅ Ответил(а): {short_name(admin) if admin else admin_id} · {to_local(now):%H:%M}"
     await mark_headers(bot, session, config, "ticket", ticket.id, marker,

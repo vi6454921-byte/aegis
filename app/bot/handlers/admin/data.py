@@ -44,14 +44,14 @@ def data_kb():  # noqa: ANN201
 async def d_menu(call: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await call.answer()
-    await show(call, "💾 <b>Данные</b>\nВсё состояние бота — в папке data/: БД, бэкапы, решения, подарки, загрузки, "
-                     "логи. Автобэкап — раз в сутки, хранятся 14 последних.\n"
-                     "📊 «Пользователи в Excel» — таблица: №, username, имя, телефон (если человек сам поделился), "
+    await show(call, "💾 <b>Данные</b>\nВсё состояние бота лежит в папке data/: БД, бэкапы, решения, подарки, загрузки, "
+                     "логи. Автобэкап: раз в сутки, хранятся 14 последних.\n"
+                     "📊 «Пользователи в Excel»: таблица с колонками №, username, имя, телефон (если человек сам поделился), "
                      "что и когда покупал.", data_kb())
 
 
 async def send_backup(bot: Bot, chat_id: int, session: AsyncSession, config: Config, admin_id: int) -> None:
-    """Свежий бэкап БД (SQLite backup API) — файлом в чат; слишком большой остаётся на сервере. Пишется в журнал."""
+    """Свежий бэкап БД (SQLite backup API) - файлом в чат; слишком большой остаётся на сервере. Пишется в журнал."""
     try:
         path = await make_backup(config)
     except Exception as e:  # noqa: BLE001
@@ -63,7 +63,7 @@ async def send_backup(bot: Bot, chat_id: int, session: AsyncSession, config: Con
     size = path.stat().st_size
     if size > TG_UPLOAD_LIMIT:
         await bot.send_message(chat_id, f"✅ Бэкап сохранён на сервере: data/backups/{path.name} "
-                                        f"({size // 1024 // 1024} МБ — слишком большой для Telegram).")
+                                        f"({size // 1024 // 1024} МБ: слишком большой для Telegram).")
         return
     await bot.send_document(chat_id, FSInputFile(path), caption=f"✅ Бэкап БД: {path.name}\n"
                                                               "Открыть: DB Browser for SQLite → Open Database.")
@@ -81,7 +81,7 @@ async def d_csv(call: CallbackQuery, session: AsyncSession, config: Config) -> N
     paths = await export_csv(session, config.exports_dir)
     log_admin(session, call.from_user.id, "export_csv", None, None, files=[p.name for p in paths])
     await session.commit()
-    caption = "📤 Экспорт: users, orders, transactions, payments (разделитель «;», UTF-8 — открывается в Excel)"
+    caption = "📤 Экспорт: users, orders, transactions, payments (разделитель «;», UTF-8, открывается в Excel)"
     media = [InputMediaDocument(media=FSInputFile(p), caption=caption if i == len(paths) - 1 else None)
              for i, p in enumerate(paths)]
     await call.message.answer_media_group(media)
@@ -107,7 +107,7 @@ async def d_clear_go(call: CallbackQuery, session: AsyncSession, config: Config,
     counts = await maintenance.clear_test_data(session, config, s, call.from_user.id, now_utc())
     issues = await maintenance.integrity_issues(session)
     text = "✅ Удалено: " + ", ".join(f"{TEST_LABELS.get(k, k)} {v}" for k, v in counts.items())
-    text += "\n" + ("🩺 Целостность: всё сходится." if not issues else f"⚠️ Расхождений: {len(issues)} — нажми «Проверка».")
+    text += "\n" + ("🩺 Целостность: всё сходится." if not issues else f"⚠️ Расхождений: {len(issues)}. Нажми «Проверка».")
     await show(call, text, data_kb())
 
 

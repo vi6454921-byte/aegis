@@ -1,8 +1,7 @@
 """Админка → 👮 Админы (2 уровень): список, приглашение ссылкой, добавление по id/@username, уровни, снятие.
 
 📌 Закреплённые админы 2 уровня (SENIOR_ADMIN_USERNAMES / SENIOR_ADMIN_IDS в .env) видны с меткой 📌:
-«ожидает /start», пока ник не привязан к id. Снять или понизить закреплённого может только владелец —
-он же может вернуть снятое закрепление кнопкой «📌 Вернуть закрепление»."""
+«ожидает /start», пока ник не привязан к id. Снять или понизить закреплённого может только владелец - он же может вернуть снятое закрепление кнопкой «📌 Вернуть закрепление»."""
 from __future__ import annotations
 
 import html
@@ -45,22 +44,22 @@ def _who(row: PinnedAdmin) -> str:
 
 async def pinned_lines(session: AsyncSession, config: Config,
                        actor_id: int) -> tuple[list[str], list[list[InlineKeyboardButton]]]:
-    """📌 из .env: кто ещё не привязан («ожидает /start») и чьё закрепление снял владелец (вернуть — кнопкой)."""
+    """📌 из .env: кто ещё не привязан («ожидает /start») и чьё закрепление снял владелец (вернуть - кнопкой)."""
     lines: list[str] = []
     buttons: list[list[InlineKeyboardButton]] = []
     rows = {r.username: r for r in await pinned_svc.entries(session) if r.username}
     for name, shown in config.senior_usernames.items():
         row = rows.get(name)
         if row is None or (roles.bind_state(row) == "env"):
-            lines.append(f"📌 @{html.escape(shown)} — 2 уровень · ожидает /start")
+            lines.append(f"📌 @{html.escape(shown)} · 2 уровень · ожидает /start")
         elif roles.bind_state(row) == "owner":
-            lines.append(f"📌 {_who(row)} — закрепление снято владельцем {fmt_dt(row.revoked_at)}")
+            lines.append(f"📌 {_who(row)}: закрепление снято владельцем {fmt_dt(row.revoked_at)}")
             if roles.is_owner(config, actor_id):
                 buttons.append([cb(f"📌 Вернуть закрепление: @{shown}", S("repin", row.id))])
     by_id = [r for r in await pinned_svc.entries(session) if r.source == "id" and r.user_id in config.senior_ids]
     for row in by_id:
         if roles.bind_state(row) == "owner":
-            lines.append(f"📌 {_who(row)} — закрепление снято владельцем {fmt_dt(row.revoked_at)}")
+            lines.append(f"📌 {_who(row)}: закрепление снято владельцем {fmt_dt(row.revoked_at)}")
             if roles.is_owner(config, actor_id):
                 buttons.append([cb(f"📌 Вернуть закрепление: id {row.user_id}", S("repin", row.id))])
     return lines, buttons
@@ -75,10 +74,10 @@ def staff_icon(config: Config, uid: int, level: int) -> str:
 async def list_view(session: AsyncSession, config: Config, actor_id: int) -> tuple[str, InlineKeyboardMarkup]:
     rows_db = await roles.staff_rows(session)
     lines = ["👮 <b>Админы</b>",
-             "<i>1 уровень — заказы, чеки, обращения, задания, сообщения клиентам. 2 уровень — всё, включая "
-             "настройки, деньги, баны и админов 1 уровня. 📌 — закреплён в .env: снять может только владелец.</i>", ""]
+             "<i>1 уровень: заказы, чеки, обращения, задания, сообщения клиентам. 2 уровень, всё, включая "
+             "настройки, деньги, баны и админов 1 уровня. 📌 закреплён в .env, снять может только владелец.</i>", ""]
     for uid in sorted(config.admin_ids):
-        lines.append(f"👑 {display_name(await session.get(User, uid))} — владелец (из .env)")
+        lines.append(f"👑 {display_name(await session.get(User, uid))} · владелец (из .env)")
     buttons = []
     for uid, level in sorted(config.staff.items(), key=lambda kv: (-kv[1], not config.is_pinned(kv[0]), kv[0])):
         if uid in config.admin_ids:
@@ -88,7 +87,7 @@ async def list_view(session: AsyncSession, config: Config, actor_id: int) -> tup
         added = f" · с {fmt_dt(row.added_at)}" if row else ""
         icon = staff_icon(config, uid, level)
         who = display_name(u) if u else f"id <code>{uid}</code> (ещё не писал боту)"
-        lines.append(f"{icon} {who} — {roles.LEVELS[level]}{added}")
+        lines.append(f"{icon} {who} · {roles.LEVELS[level]}{added}")
         buttons.append([cb(f"{icon} {short_name(u) if u else uid} · {roles.LEVEL_SHORT[level]}", S("card", uid))])
     extra, repin = await pinned_lines(session, config, actor_id)
     lines += extra
@@ -112,7 +111,7 @@ async def card_view(session: AsyncSession, config: Config, actor_id: int, uid: i
         lines.append(f"Добавлен {fmt_dt(row.added_at)}" + (f" · {display_name(by)}" if by else ""))
     if config.is_pinned(uid):
         lines.append("📌 Закреплён в .env (SENIOR_ADMIN_USERNAMES / SENIOR_ADMIN_IDS). Снять или понизить может "
-                     "только владелец — тогда закрепление снимается.")
+                     "только владелец: тогда закрепление снимается.")
     rows = []
     if roles.is_owner(config, actor_id) and level in (1, 2) and not roles.is_owner(config, uid):
         rows.append([cb("⬇️ Сделать 1 уровнем", S("lvl", uid, "1")) if level == 2
@@ -125,7 +124,7 @@ async def card_view(session: AsyncSession, config: Config, actor_id: int, uid: i
 
 async def add_view(session: AsyncSession, config: Config, actor_id: int, u: User,
                    only_level: int | None = None) -> tuple[str, InlineKeyboardMarkup]:
-    """«Сделать админом?» — по найденному пользователю (кнопки «👮 Админы», /addadmin, управление)."""
+    """«Сделать админом?» - по найденному пользователю (кнопки «👮 Админы», /addadmin, управление)."""
     if config.admin_level(u.id):
         text, kb = await card_view(session, config, actor_id, u.id)
         return "Он уже админ.\n\n" + text, kb
@@ -147,11 +146,11 @@ async def remove_view(session: AsyncSession, config: Config, actor_id: int,
     u = await session.get(User, uid)
     level = config.admin_level(uid)
     if not level:
-        return f"{display_name(u)} — не админ.", ik([cb("⬅️ К админам", S()), menu_btn()])
+        return f"{display_name(u)}: не админ.", ik([cb("⬅️ К админам", S()), menu_btn()])
     if not roles.can_manage(config, actor_id, uid, level):
         text, kb = await card_view(session, config, actor_id, uid)
         return "⛔ Недостаточно прав, чтобы снять этого админа.\n\n" + text, kb
-    note = "\n📌 Он закреплён в .env — закрепление тоже снимется." if config.is_pinned(uid) else ""
+    note = "\n📌 Он закреплён в .env: закрепление тоже снимется." if config.is_pinned(uid) else ""
     return (f"Снять доступ к админке у {display_name(u)}?{note}",
             ik([cb("🗑 Да, снять", S("rm_go", uid)), cb(texts.BTN_CANCEL, S("card", uid))]))
 

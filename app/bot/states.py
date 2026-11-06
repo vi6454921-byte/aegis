@@ -13,6 +13,7 @@ class OrderSG(StatesGroup):
     comment = State()
     summary = State()
     terms = State()
+    any_task = State()  # v2.4: «📎 Скинуть любую задачу»: фото, файлы и текст, потом «✅ Готово»
 
 
 class DisputeSG(StatesGroup):
@@ -48,6 +49,7 @@ class AdminSG(StatesGroup):
     order_price = State()
     order_count = State()
     order_reject = State()
+    order_quote = State()  # v2.4: цена «📎 Любой задачи» в рублях
     upload_solution = State()
     setting_value = State()
     broadcast_message = State()
@@ -56,7 +58,7 @@ class AdminSG(StatesGroup):
     ban_reason = State()
     staff_add = State()
     # v2.2
-    find_user = State()  # поиск по @username / ID для экранов 2 уровня (что дальше — в data["purpose"])
+    find_user = State()  # поиск по @username / ID для экранов 2 уровня (что дальше - в data["purpose"])
     give_amount = State()
     give_comment = State()
     vip_number = State()
@@ -75,4 +77,18 @@ class AdminPromoSG(StatesGroup):
     """v2.3: 🎟 Промокоды (админ 2 уровня)."""
     find_code = State()
     gen_count = State()
-    user = State()  # @username / ID для «Выдать/Снять безлимит» (что дальше — в data["what"])
+    user = State()  # @username / ID для «Выдать/Снять безлимит» (что дальше - в data["what"])
+
+
+class DesignSG(StatesGroup):
+    """v2.4: «🎨 Файлы и дизайн». Выбор хранится в данных состояния (data["dz"]), заказ создаётся на «Оплатить»."""
+    kind = State()
+    style = State()
+    fmt = State()
+    lang = State()
+    qty = State()
+    qty_input = State()
+    content = State()
+    summary = State()
+    terms = State()
+    revision = State()  # «🔁 Нужны правки»: сообщения клиента уходят исполнителю заказа

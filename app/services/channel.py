@@ -1,13 +1,12 @@
 """Канал: бонус за подписку и бонус за друга, который пришёл по ссылке и подписался.
 
 Правила и защита от накруток:
-• Бонус за подписку — один раз на аккаунт. Отписался в течение срока удержания (channel_hold_hours) —
-  бонус списывается (из остатка, не ниже нуля) и больше не начисляется никогда.
+• Бонус за подписку - один раз на аккаунт. Отписался в течение срока удержания (channel_hold_hours) -   бонус списывается (из остатка, не ниже нуля) и больше не начисляется никогда.
 • Друг засчитывается, только если впервые зашёл в бота по ссылке (это решается при регистрации) и сам
   подписался на канал. Пригласивший получает бонус после срока удержания, если друг всё ещё подписан и
   пригласивший тоже подписан. Отписка друга до конца удержания отменяет бонус за него навсегда.
-• За сутки пригласившему засчитывается не больше channel_ref_daily_limit друзей — остальные ждут следующего дня.
-• Забаненным — ничего. Проверка подписки — через getChatMember: бот должен быть админом канала.
+• За сутки пригласившему засчитывается не больше channel_ref_daily_limit друзей - остальные ждут следующего дня.
+• Забаненным - ничего. Проверка подписки - через getChatMember: бот должен быть админом канала.
 """
 from __future__ import annotations
 
@@ -29,13 +28,13 @@ log = logging.getLogger(__name__)
 
 MEMBER = "member"
 LEFT = "left"
-PENDING_TTL = timedelta(days=30)  # друг подписался, а пригласивший так и не подписался — через 30 дней отменяем
+PENDING_TTL = timedelta(days=30)  # друг подписался, а пригласивший так и не подписался - через 30 дней отменяем
 RECHECK_LEFT = timedelta(hours=6)  # как часто перепроверять неподписанного пригласившего
 
 
 @dataclass
 class Health:
-    """Последняя ошибка проверки подписки — показываем в админке."""
+    """Последняя ошибка проверки подписки - показываем в админке."""
     error: str | None = None
     error_at: datetime | None = None
     ok_at: datetime | None = None
@@ -58,7 +57,7 @@ def member_status(m) -> str:  # noqa: ANN001
 
 
 async def fetch_status(bot: Bot, channel: str, user_id: int, now: datetime | None = None) -> str | None:
-    """«member» / «left» / None — не получилось проверить (бот не админ канала, канал не найден, сеть)."""
+    """«member» / «left» / None - не получилось проверить (бот не админ канала, канал не найден, сеть)."""
     if not channel:
         return None
     try:
@@ -70,7 +69,7 @@ async def fetch_status(bot: Bot, channel: str, user_id: int, now: datetime | Non
         health.error, health.error_at = str(e), now
         log.warning("getChatMember(%s, %s) не удался: %s", channel, user_id, e)
         return None
-    except Exception as e:  # noqa: BLE001 — сеть и т.п.
+    except Exception as e:  # noqa: BLE001 - сеть и т.п.
         health.error, health.error_at = str(e), now
         log.warning("getChatMember(%s, %s): %s", channel, user_id, e)
         return None
@@ -83,14 +82,14 @@ def failing() -> bool:
 
 
 async def bot_rights_problem(bot: Bot, channel: str, now: datetime | None = None) -> str | None:
-    """Проверка при запуске: может ли бот видеть подписчиков канала. None — всё в порядке, иначе — что не так."""
+    """Проверка при запуске: может ли бот видеть подписчиков канала. None - всё в порядке, иначе - что не так."""
     if not channel:
         return None
     try:
         m = await bot.get_chat_member(channel, bot.id)
     except TelegramRetryAfter:
-        return None  # не знаем — проверим позже на живых запросах
-    except Exception as e:  # noqa: BLE001 — канал не найден, бота нет в канале, сеть
+        return None  # не знаем - проверим позже на живых запросах
+    except Exception as e:  # noqa: BLE001 - канал не найден, бота нет в канале, сеть
         problem = f"канал {channel} недоступен боту ({e})"
     else:
         status = str(getattr(m, "status", "") or "").split(".")[-1].lower()
@@ -118,8 +117,8 @@ class JoinResult:
     granted: int = 0  # начислено самому пользователю
     expires_at: datetime | None = None
     already_at: datetime | None = None  # бонус уже был начислен раньше
-    revoked_before: bool = False  # бонус был, но списан за отписку — повторно нельзя
-    referrer_id: int | None = None  # друг подписался — у пригласившего ожидается бонус
+    revoked_before: bool = False  # бонус был, но списан за отписку - повторно нельзя
+    referrer_id: int | None = None  # друг подписался - у пригласившего ожидается бонус
     ref_amount: int = 0
     ref_due_at: datetime | None = None
     banned: bool = False
@@ -227,7 +226,7 @@ async def _status(session: AsyncSession, user: User, checker: Checker, now: date
 async def process_due(session: AsyncSession, s, now: datetime, checker: Checker,  # noqa: ANN001, C901
                       referrer_id: int | None = None, fresh: bool = False) -> DueReport:
     """Начисляет бонусы пригласившим, у кого прошёл срок удержания. Вызывать под app_lock, коммитит.
-    referrer_id — только для одного пригласившего (он нажал «проверить» или подписался); fresh — не верить кэшу."""
+    referrer_id - только для одного пригласившего (он нажал «проверить» или подписался); fresh - не верить кэшу."""
     report = DueReport()
     if not s.channel:
         return report
@@ -245,7 +244,7 @@ async def process_due(session: AsyncSession, s, now: datetime, checker: Checker,
             continue
         f_status = await _status(session, friend, checker, now, cached_left_ok=False)
         if f_status is None:
-            continue  # проверить не удалось — попробуем в следующий раз
+            continue  # проверить не удалось - попробуем в следующий раз
         if f_status == LEFT:
             ref.sub_status = "cancelled"
             report.cancelled += 1

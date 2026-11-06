@@ -49,12 +49,23 @@ def user_file(message: Message) -> IncomingFile | None:
     return IncomingFile("document", d.file_id, d.file_unique_id, d.file_name, mime, d.file_size)
 
 
+def any_file(message: Message) -> IncomingFile | None:
+    """v2.4, «📎 Любая задача»: фото или документ любого типа до 20 МБ, иначе None."""
+    if message.photo:
+        return user_file(message)
+    d = message.document
+    if d is None or (d.file_size or 0) > MAX_DOWNLOAD:
+        return None
+    return IncomingFile("document", d.file_id, d.file_unique_id, d.file_name, (d.mime_type or "").lower() or None,
+                        d.file_size)
+
+
 async def download(bot: Bot, f: IncomingFile, dest: Path) -> Path | None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     try:
         await bot.download(f.file_id, destination=dest)
         return dest
-    except Exception:  # noqa: BLE001 — локальная копия не критична, file_id остаётся
+    except Exception:  # noqa: BLE001 - локальная копия не критична, file_id остаётся
         log.exception("не удалось скачать файл %s", f.file_id)
         return None
 

@@ -44,7 +44,7 @@ class Registration:
 
 
 async def register_user(session: AsyncSession, tg_user, payload: str | None, now: datetime) -> Registration:  # noqa: ANN001
-    """Находит пользователя или создаёт нового. Реферал/метка источника — только при первом входе."""
+    """Находит пользователя или создаёт нового. Реферал/метка источника - только при первом входе."""
     user = await session.get(User, tg_user.id)
     if user is not None:
         changed = False
@@ -92,9 +92,9 @@ async def register_user(session: AsyncSession, tg_user, payload: str | None, now
 
 
 def display_name(user: User | None) -> str:
-    """«Иван (@ivan, id 123)» — уже экранировано для parse_mode=HTML."""
+    """«Иван (@ivan, id 123)» - уже экранировано для parse_mode=HTML."""
     if user is None:
-        return "—"
+        return "-"
     name = " ".join(p for p in (user.first_name, user.last_name) if p) or "без имени"
     extra = f"@{user.username}, " if user.username else ""
     return f"{html.escape(name)} ({html.escape(extra)}id <code>{user.id}</code>)"
@@ -102,7 +102,7 @@ def display_name(user: User | None) -> str:
 
 def short_name(user: User | None) -> str:
     if user is None:
-        return "—"
+        return "-"
     name = user.first_name or (f"@{user.username}" if user.username else str(user.id))
     return html.escape(name)
 
@@ -147,7 +147,7 @@ async def find_user(session: AsyncSession, text: str | None) -> tuple[User | Non
     Возвращает (пользователь, None) или (None, текст ошибки). Пользователь должен хотя бы раз открыть бота."""
     parsed = parse_user_query(text)
     if parsed is None:
-        shown = html.escape((text or "").strip()[:64]) or "—"
+        shown = html.escape((text or "").strip()[:64]) or "-"
         return None, texts.USER_NOT_FOUND.format(query=f"«{shown}»")
     kind, value = parsed
     if kind == "id":
@@ -158,7 +158,7 @@ async def find_user(session: AsyncSession, text: str | None) -> tuple[User | Non
                                        .execution_options(populate_existing=True))).scalars())
     if not rows:
         return None, texts.USER_NOT_FOUND.format(query=f"@{html.escape(str(value))}")
-    if len(rows) > 1:  # ник сменил владельца, а старый владелец ещё не заходил — пусть админ уточнит ID
+    if len(rows) > 1:  # ник сменил владельца, а старый владелец ещё не заходил - пусть админ уточнит ID
         ids = ", ".join(f"<code>{u.id}</code>" for u in rows)
         return None, texts.USER_AMBIGUOUS.format(query=f"@{html.escape(str(value))}", ids=ids)
     return rows[0], None

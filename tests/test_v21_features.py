@@ -24,7 +24,7 @@ A3, A4 = 2003, 2004
 
 def welcome_of(h, uid: int):  # noqa: ANN001, ANN201
     """Последнее приветствие у uid: (текст, клавиатура)."""
-    return next((m.text, kb) for m, kb in reversed(h.screen(uid)) if (m.text or "").startswith("Привет!"))
+    return next((m.text, kb) for m, kb in reversed(h.screen(uid)) if "Привет! Это Аегис" in (m.text or ""))
 
 
 def labels(h, uid: int) -> list[str]:  # noqa: ANN001

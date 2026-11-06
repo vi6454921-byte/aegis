@@ -16,5 +16,4 @@ pytest.ini
 *.db-shm
 
 # v2.3: промокоды не нужны в образе (они уже в базе после миграции 0005)
-promo_codes.txt
-promo_codes_new.txt
+promo_codes*.txt

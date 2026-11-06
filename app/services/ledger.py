@@ -1,4 +1,4 @@
-"""Журнал денег. Любое изменение баланса — строка в transactions + обновление кэша в users,
+"""Журнал денег. Любое изменение баланса - строка в transactions + обновление кэша в users,
 в одной транзакции БД. Commit делает вызывающий сервис."""
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import actionlog
 from app.db.models import BonusLot, Transaction, User
 from app.utils.timeutil import end_of_local_day, to_local
 
@@ -32,6 +33,7 @@ async def credit_rub(session: AsyncSession, user: User, amount: int, kind: str, 
     user.balance_rub += amount
     tx = _tx(user, "rub", amount, kind, **meta)
     session.add(tx)
+    actionlog.money(user, "rub", amount, kind)
     return tx
 
 
@@ -43,11 +45,12 @@ async def debit_rub(session: AsyncSession, user: User, amount: int, kind: str, *
     user.balance_rub -= amount
     tx = _tx(user, "rub", -amount, kind, **meta)
     session.add(tx)
+    actionlog.money(user, "rub", -amount, kind)
     return tx
 
 
 def lot_expiry(now: datetime, ttl_days: int) -> datetime:
-    """Бонус живёт ttl_days дней — до 23:59 последнего дня (Самара)."""
+    """Бонус живёт ttl_days дней - до 23:59 последнего дня (Самара)."""
     return end_of_local_day(to_local(now + timedelta(days=int(ttl_days))).date())
 
 
@@ -66,6 +69,7 @@ async def credit_bonus(session: AsyncSession, user: User, amount: int, *, source
     user.balance_bonus += amount
     session.add(_tx(user, "bonus", amount, kind, bonus_lot_id=lot.id, order_id=order_id,
                     payment_id=payment_id, admin_id=admin_id, comment=comment, is_test=is_test))
+    actionlog.money(user, "bonus", amount, source)
     return lot
 
 
@@ -113,6 +117,7 @@ async def debit_bonus(session: AsyncSession, user: User, amount: int, *, kind: s
         session.add(_tx(user, "bonus", -take, kind, bonus_lot_id=lot.id, order_id=order_id,
                         payment_id=payment_id, admin_id=admin_id, comment=comment, is_test=is_test))
     user.balance_bonus -= take_total
+    actionlog.money(user, "bonus", -take_total, kind)
     return take_total
 
 

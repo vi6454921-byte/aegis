@@ -1,11 +1,11 @@
-"""Задания v2.2: «📌 Ссылка в профиле» и «📣 Пост о нас». Награды — обычные рубли на балансе.
+"""Задания v2.2: «📌 Ссылка в профиле» и «📣 Пост о нас». Награды - обычные рубли на балансе.
 
-Все начисления и списания — через журнал (ledger) под app_lock, решения админов — в admin_log.
-• Профиль: скрин → проверка админом → награда один раз на аккаунт. Пока заявка на проверке — новую не принимаем,
-  после отказа — можно снова. Перепроверка через N дней: ссылки в «О себе» нет — награда списывается (не ниже нуля).
+Все начисления и списания - через журнал (ledger) под app_lock, решения админов - в admin_log.
+• Профиль: скрин → проверка админом → награда один раз на аккаунт. Пока заявка на проверке - новую не принимаем,
+  после отказа - можно снова. Перепроверка через N дней: ссылки в «О себе» нет - награда списывается (не ниже нуля).
 • Пост: ссылка + скрин → «Принять» (награда за пост) → отчёты о просмотрах: накопительно,
   всего = floor(просмотры / шаг) × сумма за шаг (не больше потолка), к выплате = всего − уже выплачено за просмотры.
-  Одна ссылка (после нормализации) — один раз во всей системе.
+  Одна ссылка (после нормализации) - один раз во всей системе.
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from app.services.locks import app_lock
 from app.utils.money import fits_int64, fmt_rub
 from app.utils.timeutil import fmt_dt
 
-# операции журнала по заданиям («📌 Ссылка в профиле», «📣 Пост о нас») — для отчётов и статистики
+# операции журнала по заданиям («📌 Ссылка в профиле», «📣 Пост о нас») - для отчётов и статистики
 TASK_KINDS = ("profile_link", "profile_link_revoke", "promo_post", "promo_views", "promo_adjust")
 
 SYSTEM = 0  # admin_id в журнале для решений самого бота (перепроверка профиля)
@@ -101,7 +101,7 @@ def normalize_post_url(text: str) -> tuple[str, str] | None:
 
 # ------------------------------------------------------------------ «📌 Ссылка в профиле»
 def bio_status(bio: str | None, ref_code: str, bot_username: str) -> str:
-    """found — реф-ссылка в «О себе»; bot_only — ссылка на бота без реф-кода; missing — ничего."""
+    """found - реф-ссылка в «О себе»; bot_only - ссылка на бота без реф-кода; missing - ничего."""
     text = (bio or "").lower()
     if ref_code and f"ref_{ref_code}".lower() in text:
         return "found"
@@ -111,7 +111,7 @@ def bio_status(bio: str | None, ref_code: str, bot_username: str) -> str:
 
 
 async def check_bio(bot, user_id: int, ref_code: str, bot_username: str) -> str:  # noqa: ANN001
-    """Подсказка админу: Telegram отдаёт «О себе» через getChat. Ошибка — unknown (решает админ по скрину)."""
+    """Подсказка админу: Telegram отдаёт «О себе» через getChat. Ошибка - unknown (решает админ по скрину)."""
     try:
         chat = await bot.get_chat(user_id)
     except Exception:  # noqa: BLE001
@@ -126,7 +126,7 @@ async def latest_claim(session: AsyncSession, user_id: int) -> ProfileClaim | No
 
 
 async def profile_done(session: AsyncSession, user_id: int) -> ProfileClaim | None:
-    """Задание уже засчитано (или награду списали при перепроверке) — повторно не начисляется."""
+    """Задание уже засчитано (или награду списали при перепроверке) - повторно не начисляется."""
     return await session.scalar(select(ProfileClaim).where(
         ProfileClaim.user_id == user_id, ProfileClaim.status.in_(("approved", "revoked"))).limit(1))
 
@@ -202,7 +202,7 @@ async def reject_profile(session: AsyncSession, claim_id: int, admin_id: int, re
 
 
 async def recheck_due(session: AsyncSession, s, now: datetime) -> list[ProfileClaim]:  # noqa: ANN001
-    """Засчитанные заявки, которые пора перепроверить (profile_recheck_days после одобрения; 0 — выкл)."""
+    """Засчитанные заявки, которые пора перепроверить (profile_recheck_days после одобрения; 0 - выкл)."""
     days = int(s.profile_recheck_days)
     if days <= 0:
         return []
@@ -214,12 +214,12 @@ async def recheck_due(session: AsyncSession, s, now: datetime) -> list[ProfileCl
 
 
 async def apply_recheck(session: AsyncSession, claim_id: int, status: str, now: datetime) -> int | None:
-    """Итог перепроверки. missing — списать награду (не больше баланса), вернуть списанное; иначе None."""
+    """Итог перепроверки. missing - списать награду (не больше баланса), вернуть списанное; иначе None."""
     async with app_lock():
         claim = await session.get(ProfileClaim, claim_id, populate_existing=True)
         if claim is None or claim.status != "approved" or claim.rechecked_at is not None:
             return None
-        if status == "unknown":  # Telegram не ответил — попробуем завтра
+        if status == "unknown":  # Telegram не ответил - попробуем завтра
             claim.recheck_at = now + timedelta(days=1)
             await session.commit()
             return None
@@ -240,7 +240,7 @@ async def apply_recheck(session: AsyncSession, claim_id: int, status: str, now: 
 
 # ------------------------------------------------------------------ «📣 Пост о нас»
 def views_total(views: int, s) -> int:  # noqa: ANN001
-    """Сколько всего положено за просмотры: floor(views / шаг) × сумма за шаг, не больше потолка (0 — без)."""
+    """Сколько всего положено за просмотры: floor(views / шаг) × сумма за шаг, не больше потолка (0 - без)."""
     step = max(int(s.post_views_step), 1)
     total = (max(int(views), 0) // step) * int(s.post_views_reward)
     cap = int(s.post_views_cap)
@@ -273,7 +273,7 @@ async def post_block(session: AsyncSession, user_id: int, s) -> str | None:  # n
 
 
 async def check_url(session: AsyncSession, user_id: int, url: str) -> PromoPost | None:
-    """Дубликаты: чужой пост — отказ; свой отклонённый — можно прислать снова (вернём ту же запись)."""
+    """Дубликаты: чужой пост - отказ; свой отклонённый - можно прислать снова (вернём ту же запись)."""
     existing = await session.scalar(select(PromoPost).where(PromoPost.post_url == url)
                                     .execution_options(populate_existing=True))
     if existing is None:

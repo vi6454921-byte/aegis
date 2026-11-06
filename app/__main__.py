@@ -31,7 +31,7 @@ def main() -> None:
         pass
     except TelegramUnauthorizedError:
         log.error("Telegram не принял BOT_TOKEN (Unauthorized). Проверь токен в .env: после /revoke в @BotFather "
-                  "старый токен перестаёт работать — вставь новый.")
+                  "старый токен перестаёт работать: вставь новый.")
         sys.exit(1)
     except TelegramNetworkError as e:
         log.error("Нет связи с api.telegram.org (%s). Проверь интернет на сервере; в Docker бот перезапустится "

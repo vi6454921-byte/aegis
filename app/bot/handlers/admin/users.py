@@ -39,7 +39,7 @@ SOURCES = {"direct": "прямой вход", "ref": "реф-ссылка"}
 QUICK_AMOUNTS = (5000, 10000, 20000, 50000, 100000)
 COMMENTS = {"n": "", "c": "Компенсация", "g": "Подарок", "e": "Ошибка оплаты"}
 BAN_REASONS = {"spam": "Спам", "fraud": "Мошенничество", "abuse": "Оскорбления", "terms": "Нарушение условий"}
-APPEAL_HINT = "Если считаешь, что это ошибка, — отправь обращение: мы рассмотрим его и ответим здесь."
+APPEAL_HINT = "Если считаешь, что это ошибка, отправь обращение: мы рассмотрим его и ответим здесь."
 
 
 def U(a: str, user_id: int = 0, v: str = "", p: int = 0) -> AdminCb:  # noqa: N802
@@ -121,7 +121,7 @@ async def card_view(session: AsyncSession, user_id: int, config: Config, level: 
     ]
     if level >= 2:
         for lot in await active_lots(session, u.id, now):
-            lines.append(f"• {fmt_rub(lot.remaining)} из {fmt_rub(lot.amount)} — до {fmt_date(lot.expires_at)} "
+            lines.append(f"• {fmt_rub(lot.remaining)} из {fmt_rub(lot.amount)}, до {fmt_date(lot.expires_at)} "
                          f"({LOT_SOURCES.get(lot.source, lot.source)})" + (" 🧪" if lot.is_test else ""))
     status = []
     if u.is_priority:
@@ -144,14 +144,14 @@ async def card_view(session: AsyncSession, user_id: int, config: Config, level: 
                  + (f", подписались: {sub_friends}" if sub_friends else ""))
     claim, posts = await promo.user_summary(session, u.id)
     if claim is not None or posts:
-        task = texts.PROFILE_STATUS.get(claim.status, claim.status) if claim else "—"
-        lines.append(f"🎯 Задания: профиль — {task} · постов: {len(posts)}, начислено "
+        task = texts.PROFILE_STATUS.get(claim.status, claim.status) if claim else "-"
+        lines.append(f"🎯 Задания. Профиль: {task} · постов: {len(posts)}, начислено "
                      f"{fmt_rub(sum(p.credited for p in posts))}")
     n_tickets = int(await session.scalar(select(func.count(Ticket.id)).where(Ticket.user_id == u.id)) or 0)
     rows: list[list] = []
     if level >= 2:
         fm = free_month_active(u, now)
-        rows += [  # рубли, ⭐ и 🎟 — экраны «🔐 Управление» (manage.py): с подтверждением и уведомлением
+        rows += [  # рубли, ⭐ и 🎟 - экраны «🔐 Управление» (manage.py): с подтверждением и уведомлением
             [cb("💸 Выдать / списать ₽", AdminCb(s="gv", a="u", id=u.id))],
             [cb("➕ бонусы", U("adj", u.id, "bonus+")), cb("➖ бонусы", U("adj", u.id, "bonus-"))],
             [cb("⭐ Снять приоритет" if u.is_priority else "⭐ Дать приоритет", AdminCb(s="vip", a="pr", id=u.id)),
@@ -251,8 +251,8 @@ async def u_xlsx(call: CallbackQuery, session: AsyncSession, config: Config) -> 
     log_admin(session, call.from_user.id, "export_users_xlsx", None, None, file=path.name)  # персональные данные
     await session.commit()
     await call.message.answer_document(FSInputFile(path, filename=path.name),
-                                       caption="📊 Пользователи, покупки и пополнения — Excel-таблица.\n"
-                                               "<i>Здесь персональные данные (телефоны) — не пересылай файл "
+                                       caption="📊 Пользователи, покупки и пополнения: Excel-таблица.\n"
+                                               "<i>Здесь персональные данные (телефоны): не пересылай файл "
                                                "посторонним.</i>")
 
 
@@ -275,7 +275,7 @@ async def u_adj(call: CallbackQuery, callback_data: AdminCb, state: FSMContext, 
     now_bal = u.balance_rub if account == "rub" else u.balance_bonus
     amounts = [cb(fmt_rub(a), U("adj_amt", u.id, f"{account}{sign}{a}")) for a in QUICK_AMOUNTS]
     await ask(call, state, AdminSG.adjust_amount,
-              f"{verb} <b>{what}</b> — {display_name(u)}\nСейчас: {fmt_rub(now_bal)}\n\n"
+              f"{verb} <b>{what}</b>: {display_name(u)}\nСейчас: {fmt_rub(now_bal)}\n\n"
               "Выбери сумму или напиши свою (например, <code>75</code> или <code>99,90</code>):",
               ik(amounts[:3], amounts[3:], [cancel_btn(U("card", u.id))]), uid=u.id, account=account, sign=sign)
 
@@ -286,8 +286,8 @@ async def _comment_step(target: CallbackQuery | Message, state: FSMContext, sess
     uid, account, sign = int(data["uid"]), data["account"], data["sign"]
     u = await session.get(User, uid)
     verb, what = _adj_words(account, sign)
-    text = (f"{verb} <b>{fmt_rub(amount)}</b> ({what}) — {display_name(u)}\n\n"
-            "Комментарий — его увидит клиент и он попадёт в журнал. Выбери или напиши свой:")
+    text = (f"{verb} <b>{fmt_rub(amount)}</b> ({what}): {display_name(u)}\n\n"
+            "Комментарий: его увидит клиент и он попадёт в журнал. Выбери или напиши свой:")
     kb = ik([cb("Без комментария", U("adj_go", uid, "n")), cb(COMMENTS["c"], U("adj_go", uid, "c"))],
             [cb(COMMENTS["g"], U("adj_go", uid, "g")), cb(COMMENTS["e"], U("adj_go", uid, "e"))],
             [cancel_btn(U("card", uid))])
@@ -315,7 +315,7 @@ async def u_adj_quick(call: CallbackQuery, callback_data: AdminCb, state: FSMCon
 async def u_adj_amount(message: Message, state: FSMContext, session: AsyncSession, bot: Bot) -> None:
     amount = parse_rub(message.text or "")
     if amount is None:
-        await message.answer("Нужна сумма больше нуля, например 50 — или выбери кнопкой выше.")
+        await message.answer("Нужна сумма больше нуля, например 50: или выбери кнопкой выше.")
         return
     await close_prompt(bot, await state.get_data())
     await _comment_step(message, state, session, amount)
@@ -329,7 +329,7 @@ async def _do_adjust(session: AsyncSession, s: RuntimeSettings, bot: Bot, data: 
         await admin_adjust(session, uid, account, signed, comment[:500], s, now_utc(), admin_id)
     except InsufficientFunds:
         await session.rollback()
-        return "❌ Недостаточно средств для списания — баланс не меняли."
+        return "❌ Недостаточно средств для списания: баланс не меняли."
     tail = f": {html.escape(comment)}" if comment else "."
     if signed > 0:
         what = "на рублёвый баланс" if account == "rub" else "бонусами"
@@ -376,7 +376,7 @@ async def u_ban(call: CallbackQuery, callback_data: AdminCb, session: AsyncSessi
         await call.answer(texts.NOT_FOUND)
         return
     if config.admin_level(u.id):
-        await call.answer("Админа забанить нельзя — сначала сними доступ в «👮 Админы».", show_alert=True)
+        await call.answer("Админа забанить нельзя: сначала сними доступ в «👮 Админы».", show_alert=True)
         return
     if u.is_banned:
         await call.answer("Уже забанен.")
@@ -385,7 +385,7 @@ async def u_ban(call: CallbackQuery, callback_data: AdminCb, session: AsyncSessi
     await call.answer()
     reasons = [cb(title, U("ban_go", u.id, code)) for code, title in BAN_REASONS.items()]
     await show(call, f"🚫 <b>Забанить</b> {display_name(u)}?\n\nБот для него закроется, но он сможет отправить "
-                     "обжалование — оно придёт в «📨 Обращения». Выбери причину (её увидит пользователь):",
+                     "обжалование: оно придёт в «📨 Обращения». Выбери причину (её увидит пользователь):",
                ik(reasons[:2], reasons[2:], [cb("✏️ Своя причина", U("ban_custom", u.id)),
                                              cb("Без причины", U("ban_go", u.id, "none"))],
                   [cb(texts.BTN_CANCEL, U("card", u.id))]))
@@ -422,7 +422,7 @@ async def u_ban_go(call: CallbackQuery, callback_data: AdminCb, state: FSMContex
 @router.callback_query(_f("ban_custom"), L2)
 async def u_ban_custom(call: CallbackQuery, callback_data: AdminCb, state: FSMContext) -> None:
     await call.answer()
-    await ask(call, state, AdminSG.ban_reason, "✏️ Напиши причину бана — её увидит пользователь (до 200 символов):",
+    await ask(call, state, AdminSG.ban_reason, "✏️ Напиши причину бана: её увидит пользователь (до 200 символов):",
               ik([cancel_btn(U("card", callback_data.id))]), uid=callback_data.id)
 
 
@@ -466,14 +466,14 @@ async def u_msg(call: CallbackQuery, callback_data: AdminCb, state: FSMContext, 
     await call.answer()
     await ask(call, state, AdminSG.message_user,
               f"✉️ <b>Сообщение для</b> {display_name(u)}\n"
-              "Пришли текст, фото или файл — клиент получит его от имени бота и сможет ответить.",
+              "Пришли текст, фото или файл: клиент получит его от имени бота и сможет ответить.",
               ik([cancel_btn(U("card", callback_data.id))]), uid=callback_data.id)
 
 
 @router.message(AdminSG.message_user)
 async def u_msg_send(message: Message, state: FSMContext, session: AsyncSession, bot: Bot, config: Config) -> None:
     if not copyable(message):
-        await message.answer("Такое сообщение переслать нельзя — пришли текст, фото или файл.")
+        await message.answer("Такое сообщение переслать нельзя: пришли текст, фото или файл.")
         return
     data = await state.get_data()
     uid = int(data.get("uid") or 0)
@@ -531,7 +531,7 @@ async def u_tx(call: CallbackQuery, callback_data: AdminCb, session: AsyncSessio
 
 
 SUB_STATUS = {"none": "не подписался", "pending": "⏳ подписался, ждём срок удержания",
-              "rewarded": "✅ подписка засчитана", "cancelled": "✖️ отписался — не засчитан"}
+              "rewarded": "✅ подписка засчитана", "cancelled": "✖️ отписался: не засчитан"}
 
 
 @router.callback_query(_f("refs"), L2)
@@ -547,5 +547,5 @@ async def u_refs(call: CallbackQuery, callback_data: AdminCb, session: AsyncSess
         sub = SUB_STATUS.get(ref.sub_status, ref.sub_status)
         if ref.sub_status == "rewarded":
             sub += f" (+{fmt_rub(ref.sub_reward_amount)})"
-        lines.append(f"• {display_name(user)} — {state} · канал: {sub}")
+        lines.append(f"• {display_name(user)} · {state} · канал: {sub}")
     await show(call, "\n".join(lines)[:4000], ik([cb("⬅️ Карточка", U("card", callback_data.id))]))

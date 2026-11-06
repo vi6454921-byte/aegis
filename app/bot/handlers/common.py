@@ -49,7 +49,7 @@ from app.utils.timeutil import fmt_date, fmt_dt, now_utc
 
 log = logging.getLogger(__name__)
 
-menu_router = Router(name="menu")  # кнопки меню и команды — работают из любого состояния
+menu_router = Router(name="menu")  # кнопки меню и команды - работают из любого состояния
 router = Router(name="common")
 fallback_router = Router(name="fallback")
 
@@ -60,7 +60,7 @@ _GIFTS_LINE = re.compile(r"^[ \t]*\{gifts\}[ \t]*(?:\r?\n|$)", re.MULTILINE)
 
 
 def render_welcome(template: str, stats_line: str, name: str | None, s: RuntimeSettings) -> str:
-    """Приветствие из настройки: {stats}, {name} и {gifts} — подарки ссылками прямо в тексте.
+    """Приветствие из настройки: {stats}, {name} и {gifts} - подарки ссылками прямо в тексте.
     Если {gifts} из текста убрали, ссылки всё равно добавляются в конце: кнопок подарков больше нет."""
     text = template.replace("{stats}", stats_line).replace("{name}", html.escape(name or ""))
     block = gifts.welcome_block(s)
@@ -83,7 +83,7 @@ def drop_button(markup: InlineKeyboardMarkup | None, data: str) -> InlineKeyboar
 # ------------------------------------------------------------------ /start
 async def accept_admin_invite(message: Message, session: AsyncSession, config: Config, bot: Bot, user: User,
                               token: str, level_before: int) -> bool:
-    """/start adm_<код>: стать админом по ссылке-приглашению. True — экран показан, приветствие не нужно."""
+    """/start adm_<код>: стать админом по ссылке-приглашению. True - экран показан, приветствие не нужно."""
     try:
         res = await roles.accept_invite(session, config, token, user.id, now_utc())
     except roles.RoleError as e:
@@ -91,14 +91,14 @@ async def accept_admin_invite(message: Message, session: AsyncSession, config: C
         return False
     set_menu_admin(True)
     if level_before > 0 and level_before >= res.level:
-        await message.answer(f"ℹ️ Ты уже админ ({roles.LEVELS[level_before]}). Админ-панель — /admin.",
+        await message.answer(f"ℹ️ Ты уже админ ({roles.LEVELS[level_before]}). Админ-панель: /admin.",
                              reply_markup=main_menu())
         return True
     await refresh_commands(bot, config, user.id)
     await message.answer(texts.ADMIN_INVITE_OK.format(level=roles.LEVELS[res.level]), reply_markup=main_menu())
     if res.inviter_id != user.id:
         await safe_send(bot, res.inviter_id,
-                        f"✅ {display_name(user)} принял приглашение — теперь админ ({roles.LEVELS[res.level]}).",
+                        f"✅ {display_name(user)} принял приглашение: теперь админ ({roles.LEVELS[res.level]}).",
                         reply_markup=ik([cb("👮 Админы", AdminCb(s="st", a="list"))]))
     log.warning("новый админ по приглашению: %s (id %s), %s", user.first_name, user.id, roles.LEVELS[res.level])
     return True
@@ -119,7 +119,7 @@ async def cmd_start(message: Message, command: CommandObject, state: FSMContext,
     await message.answer(texts.MENU_HINT + (f"\n\n{texts.ADMIN_HINT}" if admin_level else ""),
                          reply_markup=main_menu())
     drafts.mark_shown()
-    if info is not None:  # v2.3: незаконченный черновик — сразу предлагаем продолжить (или удалить)
+    if info is not None:  # v2.3: незаконченный черновик - сразу предлагаем продолжить (или удалить)
         text, kb = drafts.screen(info)
         await message.answer(text, reply_markup=kb)
     if db_user.tutorial_done_at is None and admin_level == 0:
@@ -179,7 +179,7 @@ async def guide_done(call: CallbackQuery, session: AsyncSession, db_user: User) 
 
 # ------------------------------------------------------------------ подарки
 def gifts_screen(user: User, s: RuntimeSettings) -> tuple[str, InlineKeyboardMarkup | None]:
-    """Подарки — ссылками в тексте; кнопки только у предложения подписаться на канал."""
+    """Подарки - ссылками в тексте; кнопки только у предложения подписаться на канал."""
     text = gifts.menu_text(s)
     promo_text, promo_rows = channel_promo(user, s)
     if promo_text:
@@ -196,7 +196,7 @@ async def menu_gifts(message: Message, state: FSMContext, db_user: User, s: Runt
 
 @router.callback_query(GiftCb.filter())
 async def old_gift_button(call: CallbackQuery, db_user: User, s: RuntimeSettings) -> None:
-    """Кнопки подарков из старых сообщений (до v2.1, присылали HTML-файл) — теперь присылаем ссылки."""
+    """Кнопки подарков из старых сообщений (до v2.1, присылали HTML-файл) - теперь присылаем ссылки."""
     await call.answer()
     text, kb = gifts_screen(db_user, s)
     await call.message.answer(text, reply_markup=kb)
@@ -216,10 +216,10 @@ async def balance_text(session: AsyncSession, user: User, s: RuntimeSettings) ->
         lines.append(f"🎁 «Месяц бесплатно» до {fmt_date(user.free_month_until)}: осталось задач "
                      f"{user.free_month_tasks_left}")
     if user.is_priority:
-        lines.append("⭐ Статус «Приоритет» — твои заказы выше в очереди")
+        lines.append("⭐ Статус «Приоритет»: твои заказы выше в очереди")
     status = unlimited_status(user)
     if status:
-        lines.insert(0, f"<b>{status}</b> — {texts.UNLIMITED_BALANCE_NOTE}\n")
+        lines.insert(0, f"<b>{status}</b>: {texts.UNLIMITED_BALANCE_NOTE}\n")
     if bonuses_exist(s):
         lines.append("\n" + texts.BALANCE_HOW)
     elif tasks_exist(s):
@@ -233,9 +233,24 @@ def tasks_exist(s: RuntimeSettings) -> bool:
 
 
 def balance_kb(user: User) -> InlineKeyboardMarkup:
-    """«↩️ Вернуть рубли» убрали в 2.2: вывод денег в разработке (текст про это — в самом экране)."""
-    return ik([cb("➕ Пополнить", MenuCb(action="topup")), cb("📜 История", MenuCb(action="history"))],
-              [cb(texts.BALANCE_BONUSES_BTN, MenuCb(action="bonuses"))])
+    """v2.4: сетка 2×2. «💸 Вывести» пока показывает, что вывод скоро появится (и «← Назад» к балансу)."""
+    return ik([cb(texts.BALANCE_TOPUP_BTN, MenuCb(action="topup")), cb(texts.BALANCE_HISTORY_BTN, MenuCb(action="history"))],
+              [cb(texts.BALANCE_BONUSES_BTN, MenuCb(action="bonuses")),
+               cb(texts.BALANCE_WITHDRAW_BTN, MenuCb(action="withdraw"))])
+
+
+@router.callback_query(MenuCb.filter(F.action == "withdraw"))
+async def cb_withdraw(call: CallbackQuery) -> None:
+    """«💸 Вывести»: вывода пока нет. Экран меняется на месте, «← Назад» возвращает баланс."""
+    await call.answer()
+    await show(call, texts.WITHDRAW_SCREEN, ik([cb(texts.BTN_BACK_ARROW, MenuCb(action="balance"))]))
+
+
+@router.callback_query(MenuCb.filter(F.action == "balance"))
+async def cb_balance(call: CallbackQuery, session: AsyncSession, db_user: User, s: RuntimeSettings) -> None:
+    """«← Назад» с экрана вывода: снова баланс в том же сообщении."""
+    await call.answer()
+    await show(call, await balance_text(session, db_user, s), balance_kb(db_user))
 
 
 def task_rows(s: RuntimeSettings) -> list[list[InlineKeyboardButton]]:
@@ -258,7 +273,7 @@ def bonuses_screen(user: User, s: RuntimeSettings) -> tuple[str, list[list[Inlin
 
 @router.callback_query(MenuCb.filter(F.action == "bonuses"))
 async def cb_bonuses(call: CallbackQuery, db_user: User, s: RuntimeSettings) -> None:
-    """Из «💰 Баланс»: экран бонусов новым сообщением — баланс остаётся на месте."""
+    """Из «💰 Баланс»: экран бонусов новым сообщением - баланс остаётся на месте."""
     await call.answer()
     text, rows = bonuses_screen(db_user, s)
     await call.message.answer(text, reply_markup=ik(*rows, [cb(texts.BTN_BACK, MenuCb(action="help"))]))
@@ -308,9 +323,9 @@ async def history(call: CallbackQuery, session: AsyncSession, db_user: User) -> 
 def friend_status(ref: Referral, s: RuntimeSettings) -> str:
     parts = []
     if ref.sub_status == "rewarded":
-        parts.append("🎁 подписался — бонус получен")
+        parts.append("🎁 подписался: бонус получен")
     elif ref.sub_status == "pending":
-        parts.append(f"⏳ подписался — бонус после {fmt_dt(ref.sub_due_at)}" if ref.sub_due_at else "⏳ подписался")
+        parts.append(f"⏳ подписался: бонус после {fmt_dt(ref.sub_due_at)}" if ref.sub_due_at else "⏳ подписался")
     elif ref.sub_status == "cancelled":
         parts.append("✖️ бонус за подписку не начислен")
     elif s.channel_ref_on:
@@ -323,7 +338,7 @@ def friend_status(ref: Referral, s: RuntimeSettings) -> str:
 
 
 async def referrer_status(bot: Bot, session: AsyncSession, s: RuntimeSettings, user: User) -> str | None:
-    """Подписан ли сам пригласивший (кэш, при необходимости — живая проверка)."""
+    """Подписан ли сам пригласивший (кэш, при необходимости - живая проверка)."""
     status = user.channel_status
     if status != ch.MEMBER:
         fresh = await ch.fetch_status(bot, s.channel, user.id, now_utc())
@@ -336,14 +351,14 @@ async def referrer_status(bot: Bot, session: AsyncSession, s: RuntimeSettings, u
 
 def channel_offer(s: RuntimeSettings) -> str:
     bonus, friend = int(s.channel_ref_bonus), int(s.channel_bonus) if s.channel_bonus_on else 0
-    title = (f"🎁 <b>Вам обоим — по {fmt_rub(bonus)} бонусами:</b>" if friend == bonus
+    title = (f"🎁 <b>Вам обоим: по {fmt_rub(bonus)} бонусами:</b>" if friend == bonus
              else "🎁 <b>Бонусы вам обоим:</b>")
     hold = int(s.channel_hold_hours)
     channel = html.escape(s.channel)
     lines = [title, "1️⃣ Друг впервые заходит в бота по твоей ссылке.",
-             f"2️⃣ Подписывается на наш канал {channel}" + (f" — и сразу получает {fmt_rub(friend)}." if friend else ".")]
+             f"2️⃣ Подписывается на наш канал {channel}" + (f" и сразу получает {fmt_rub(friend)}." if friend else ".")]
     when = f"Через {hold} ч" if hold else "Сразу"
-    lines.append(f"3️⃣ {when} тебе — {fmt_rub(bonus)}, если друг всё ещё подписан, а ты тоже подписан на канал.")
+    lines.append(f"3️⃣ {when} тебе: {fmt_rub(bonus)}, если друг всё ещё подписан, а ты тоже подписан на канал.")
     return "\n".join(lines)
 
 
@@ -377,7 +392,7 @@ async def menu_invite(message: Message, state: FSMContext, session: AsyncSession
     if friends:
         lines.append(f"\n<b>Приглашённые ({len(friends)}):</b>")
         for ref, user in friends[:30]:
-            lines.append(f"• {short_name(user)} — {friend_status(ref, s)}")
+            lines.append(f"• {short_name(user)}: {friend_status(ref, s)}")
         if len(friends) > 30:
             lines.append(f"…и ещё {len(friends) - 30}")
     rules = (texts.INVITE_RULES.format(hold=s.channel_hold_hours, limit=s.channel_ref_daily_limit)
@@ -434,7 +449,7 @@ async def help_screen(call: CallbackQuery, callback_data: MenuCb, db_user: User,
         rows.append([cb("💳 Вопрос по оплате", MenuCb(action="paysupport"))])
     elif key == "terms":
         text, rows = terms_screen(db_user, s)
-    elif key == "commands":  # тот же список, что и /commands, — только доступное этому человеку
+    elif key == "commands":  # тот же список, что и /commands, - только доступное этому человеку
         text = commands_text(config, call.from_user.id)
     else:
         await call.answer(texts.STALE_BUTTON)
@@ -507,7 +522,7 @@ async def reply_back(message: Message) -> None:
     await message.answer(texts.MENU_HINT, reply_markup=main_menu())
 
 
-# ------------------------------------------------------------------ /commands — что доступно именно мне
+# ------------------------------------------------------------------ /commands - что доступно именно мне
 @menu_router.message(Command("commands"))
 async def cmd_commands(message: Message, state: FSMContext, config: Config) -> None:
     await state.clear()
@@ -521,7 +536,7 @@ async def not_admin(message: Message, is_admin: bool) -> bool:
 
 @menu_router.message(Command(*(c for c in ADMIN_COMMAND_NAMES if c != "admin")), not_admin)
 async def cmd_staff_denied(message: Message, state: FSMContext) -> None:
-    """/give, /ban, /user… от обычного пользователя — сервер отказывает, даже если команду набрали руками."""
+    """/give, /ban, /user… от обычного пользователя - сервер отказывает, даже если команду набрали руками."""
     await state.clear()
     await message.answer(texts.ADMIN_CMD_ONLY)
 
@@ -529,7 +544,7 @@ async def cmd_staff_denied(message: Message, state: FSMContext) -> None:
 @menu_router.message(Command("admin"), not_admin)
 async def cmd_admin_denied(message: Message, command: CommandObject, session: AsyncSession, config: Config,
                            bot: Bot, owner_claim: owner.OwnerClaim) -> None:
-    if not owner_claim.active:  # админ уже есть — чужим просто «нет доступа»
+    if not owner_claim.active:  # админ уже есть - чужим просто «нет доступа»
         await message.answer(texts.ADMIN_ONLY)
         return
     if not owner_claim.check(command.args):

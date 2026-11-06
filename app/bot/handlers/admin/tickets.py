@@ -1,7 +1,7 @@
 """Админка → обращения: входящие, переписка, ответ кнопкой или свайпом, закрытие, разбан по обжалованию.
 
 v2.3: «✉️ Ответить» включает режим чата (admin/chat.py); свайп-ответ на уведомление доставляется тем же
-механизмом (app.bot.conversation): по заказу — в единую переписку заказа, с подтверждением «✅ Доставлено»."""
+механизмом (app.bot.conversation): по заказу - в единую переписку заказа, с подтверждением «✅ Доставлено»."""
 from __future__ import annotations
 
 import html
@@ -46,7 +46,7 @@ def _f(action: str):  # noqa: ANN202
 async def inbox_view(session: AsyncSession, page: int, only_open: bool) -> tuple[str, InlineKeyboardMarkup]:
     rows, total = await tickets.inbox(session, page, PER_PAGE, only_open)
     n_open = await tickets.open_count(session)
-    lines = [f"📨 <b>Обращения</b> — ждут ответа: <b>{n_open}</b>",
+    lines = [f"📨 <b>Обращения</b>\nЖдут ответа: <b>{n_open}</b>",
              "<i>Сначала те, что ждут дольше всех.</i>" if only_open else "<i>Все незакрытые, свежие сверху.</i>"]
     buttons = []
     for t in rows:
@@ -68,10 +68,10 @@ async def inbox_view(session: AsyncSession, page: int, only_open: bool) -> tuple
 
 async def ticket_view(session: AsyncSession, ticket: Ticket, level: int) -> tuple[str, InlineKeyboardMarkup]:
     user = await session.get(User, ticket.user_id, populate_existing=True)
-    lines = [f"{tickets.title(ticket)} · №{ticket.id} — {tickets.STATUS.get(ticket.status, ticket.status)}",
+    lines = [f"{tickets.title(ticket)} · №{ticket.id} · {tickets.STATUS.get(ticket.status, ticket.status)}",
              f"Клиент: {display_name(user)}"]
     if ticket.kind == "appeal" and user is not None:
-        lines.append("Статус: " + ("🚫 забанен" + (f" — {html.escape(user.ban_reason)}" if user.ban_reason else "")
+        lines.append("Статус: " + ("🚫 забанен" + (f": {html.escape(user.ban_reason)}" if user.ban_reason else "")
                                    if user.is_banned else "✅ уже разбанен"))
     if ticket.order_id:
         order = await session.get(Order, ticket.order_id)
@@ -84,14 +84,14 @@ async def ticket_view(session: AsyncSession, ticket: Ticket, level: int) -> tupl
         lines.append("\n<b>Переписка</b> (последние сообщения):")
     names: dict[int, str] = {}
     for m in history:
-        body = tickets.preview_of(m.text, m.content_type)[:300] or "—"
+        body = tickets.preview_of(m.text, m.content_type)[:300] or "-"
         if m.direction == "in":
             has_media = has_media or m.content_type != "text"
-            lines.append(f"👤 {fmt_dt(m.created_at)} — {html.escape(body)}")
+            lines.append(f"👤 {fmt_dt(m.created_at)}: {html.escape(body)}")
         else:
             if m.admin_id not in names:
                 names[m.admin_id] = short_name(await session.get(User, m.admin_id)) if m.admin_id else "бот"
-            lines.append(f"🛡 {names[m.admin_id]} · {fmt_dt(m.created_at)} — {html.escape(body)}")
+            lines.append(f"🛡 {names[m.admin_id]} · {fmt_dt(m.created_at)}: {html.escape(body)}")
     text = "\n".join(lines)
     if len(text) > 4000:
         text = text[:3990] + "…"
@@ -158,16 +158,16 @@ async def t_media(call: CallbackQuery, callback_data: AdminCb, session: AsyncSes
             try:
                 await bot.copy_message(call.from_user.id, ticket.user_id, m.user_msg_id)
                 sent += 1
-            except Exception:  # noqa: BLE001 — клиент удалил сообщение
+            except Exception:  # noqa: BLE001 - клиент удалил сообщение
                 pass
     if not sent:
-        await call.message.answer("Вложения недоступны — возможно, клиент удалил сообщения.")
+        await call.message.answer("Вложения недоступны: возможно, клиент удалил сообщения.")
 
 
 # ------------------------------------------------------------------ ответ
 @router.callback_query(_f("reply"))
 async def t_reply(call: CallbackQuery, callback_data: AdminCb, state: FSMContext, session: AsyncSession) -> None:
-    """«✉️ Ответить» — режим чата с клиентом: по обращению, а если оно про заказ — по заказу."""
+    """«✉️ Ответить» - режим чата с клиентом: по обращению, а если оно про заказ - по заказу."""
     target = await ticket_target(session, callback_data.id)
     if target is None:
         await call.answer(texts.NOT_FOUND, show_alert=True)
@@ -177,7 +177,7 @@ async def t_reply(call: CallbackQuery, callback_data: AdminCb, state: FSMContext
 
 
 async def staff_replied(message: Message, session: AsyncSession) -> dict | bool:
-    """Админ ответил свайпом на уведомление бота — найдём, к чему оно относится."""
+    """Админ ответил свайпом на уведомление бота - найдём, к чему оно относится."""
     r = message.reply_to_message
     if r is None or message.from_user is None or r.from_user is None or not r.from_user.is_bot:
         return False
@@ -188,7 +188,7 @@ async def staff_replied(message: Message, session: AsyncSession) -> dict | bool:
 @router.message(StateFilter(None), staff_replied)
 async def t_swipe_reply(message: Message, session: AsyncSession, sessionmaker: async_sessionmaker, bot: Bot,
                         config: Config, amsg) -> None:  # noqa: ANN001
-    """Свайп-ответ на уведомление: доставляем так же, как в режиме чата (альбом — целиком), с подтверждением."""
+    """Свайп-ответ на уведомление: доставляем так же, как в режиме чата (альбом - целиком), с подтверждением."""
     now = now_utc()
     target = None
     if amsg.kind == "ticket":
@@ -233,7 +233,7 @@ async def t_close(call: CallbackQuery, callback_data: AdminCb, session: AsyncSes
         await mark_headers(bot, session, config, "ticket", ticket.id,
                            f"☑️ Закрыто: {short_name(admin)} · {to_local(now):%H:%M}",
                            markup_for=lambda lvl: closed_kb(ticket, lvl))
-        for chat in await conversation.finish_ticket(session, ticket.id):  # чат по закрытому обращению — всё
+        for chat in await conversation.finish_ticket(session, ticket.id):  # чат по закрытому обращению - всё
             await safe_send(bot, chat.admin_id, texts.CHAT_FINISHED.format(mark=Target.of(chat).mark, n=chat.sent))
     if callback_data.v != "n":
         await show_ticket(call, session, config, ticket.id)

@@ -1,4 +1,4 @@
-"""Время: в БД — UTC, людям — Europe/Samara."""
+"""Время: в БД - UTC, людям - Europe/Samara."""
 from __future__ import annotations
 
 import re
@@ -35,7 +35,7 @@ def local_day_bounds(d: date) -> tuple[datetime, datetime]:
 
 def fmt_dt(dt: datetime | None, with_weekday: bool = False) -> str:
     if dt is None:
-        return "—"
+        return "-"
     loc = to_local(dt)
     s = loc.strftime("%d.%m")
     if loc.year != local_today().year:
@@ -47,16 +47,16 @@ def fmt_dt(dt: datetime | None, with_weekday: bool = False) -> str:
 
 
 def full_date(dt: datetime | date | None) -> str:
-    """ДД.ММ.ГГГГ (по Самаре) — для сроков безлимита."""
+    """ДД.ММ.ГГГГ (по Самаре) - для сроков безлимита."""
     if dt is None:
-        return "—"
+        return "-"
     d = to_local(dt).date() if isinstance(dt, datetime) else dt
     return d.strftime("%d.%m.%Y")
 
 
 def fmt_date(dt: datetime | date | None) -> str:
     if dt is None:
-        return "—"
+        return "-"
     d = to_local(dt).date() if isinstance(dt, datetime) else dt
     s = d.strftime("%d.%m")
     if d.year != local_today().year:
@@ -87,7 +87,7 @@ _ISO_RE = re.compile(r"^\s*(\d{4})-(\d{1,2})-(\d{1,2})(?:[\sT]+(\d{1,2}):(\d{2})
 def parse_deadline(text: str, now: datetime | None = None) -> datetime | None:
     """«25.03», «25.03.2026», «25.03 18:00», «2026-03-25 18:00» → aware datetime.
 
-    Без времени — 23:59 этого дня. Без года — ближайшая будущая такая дата.
+    Без времени - 23:59 этого дня. Без года - ближайшая будущая такая дата.
     """
     now = now or now_utc()
     today = local_today(now)

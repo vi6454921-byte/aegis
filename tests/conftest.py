@@ -46,7 +46,36 @@ def template_db(tmp_path_factory: pytest.TempPathFactory) -> Path:
     t.join()
     if errors:
         raise errors[0]
+    _seed_test_codes(db)
     return db
+
+
+TEST_CODES = {"forever": 35, "days": 10}
+
+
+def _seed_test_codes(db: Path) -> None:
+    """v2.4: в миграциях промокодов больше нет (коды выпускает только админ). Для тестов v2.3 кладём в шаблон
+    базы 45 случайных кодов, как раньше: 35 «навсегда» и 10 «на 30 дней»."""
+    import sqlite3
+    from datetime import datetime, timezone
+
+    from app.services.promocodes import generate_code
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(" ")
+    codes: set[str] = set()
+    con = sqlite3.connect(db)
+    try:
+        for kind, n in TEST_CODES.items():
+            for _ in range(n):
+                code = generate_code()
+                while code in codes:
+                    code = generate_code()
+                codes.add(code)
+                con.execute("INSERT INTO promo_codes (code, kind, days, created_at) VALUES (?, ?, ?, ?)",
+                            (code, kind, 30 if kind == "days" else None, now))
+        con.commit()
+    finally:
+        con.close()
 
 
 @pytest.fixture

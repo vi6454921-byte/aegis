@@ -1,4 +1,4 @@
-"""Деньги — целые копейки. Здесь форматирование и разбор ввода."""
+"""Деньги - целые копейки. Здесь форматирование и разбор ввода."""
 from __future__ import annotations
 
 import math
@@ -32,13 +32,13 @@ def parse_rub(text: str) -> int | None:
     return int(value) if value > 0 else None
 
 
-_SIGNED_RE = re.compile(r"([+\-−–]?)(\d+(?:[.,]\d{1,2})?)")
+_SIGNED_RE = re.compile(r"([+\-−\u2013]?)(\d+(?:[.,]\d{1,2})?)")
 
 
 def parse_signed_rub(text: str) -> int | None:
     """«500», «+500», «-500», «−1 000,50», «99.90 ₽» → копейки со знаком (без верхнего предела) или None.
 
-    Ноль и мусор — None. Переполнение хранения проверяет вызывающий (fits_int64)."""
+    Ноль и мусор - None. Переполнение хранения проверяет вызывающий (fits_int64)."""
     if text is None:
         return None
     t = re.sub(r"[\s\u00a0]+", "", text.strip().lower())
@@ -49,17 +49,17 @@ def parse_signed_rub(text: str) -> int | None:
     value = int((Decimal(m.group(2).replace(",", ".")) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
     if value == 0:
         return None
-    return -value if m.group(1) in ("-", "−", "–") else value
+    return -value if m.group(1) in ("-", "−", "\u2013") else value
 
 
-_AMOUNT_HEAD_RE = re.compile(r"^\s*([+\-−–]?)\s*(\d{1,3}(?:[ \u00a0]\d{3})+|\d+)([.,]\d{1,2})?"
+_AMOUNT_HEAD_RE = re.compile(r"^\s*([+\-−\u2013]?)\s*(\d{1,3}(?:[ \u00a0]\d{3})+|\d+)([.,]\d{1,2})?"
                              r"\s*(?:₽|руб\.?|р\.?)?(?=\s|$)\s*(.*)$", re.IGNORECASE | re.DOTALL)
 
 
 def split_amount(text: str | None) -> tuple[int | None, str]:
     """Сумма в начале строки и всё, что после неё: «+1 000,50 за пост» → (100050, "за пост"), «-500» → (-50000, "").
 
-    Разряды можно отделять пробелом («10 000»). Не сумма (или ноль) — (None, "")."""
+    Разряды можно отделять пробелом («10 000»). Не сумма (или ноль) - (None, "")."""
     m = _AMOUNT_HEAD_RE.match(text or "")
     if not m:
         return None, ""

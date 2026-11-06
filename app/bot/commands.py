@@ -1,10 +1,10 @@
 """Команды по ролям: меню команд Telegram (кнопка «Меню») и список /commands.
 
-• Обычный пользователь — общий список (BotCommandScopeDefault).
-• Админ 1 уровня, 2 уровня и владелец — каждый свой список в своём чате (BotCommandScopeChat).
+• Обычный пользователь - общий список (BotCommandScopeDefault).
+• Админ 1 уровня, 2 уровня и владелец - каждый свой список в своём чате (BotCommandScopeChat).
 • Меню обновляется при назначении, повышении, понижении, снятии админа и привязке закреплённого админа:
-  refresh_commands(bot, config, user_id). Снятому админу личный список удаляется — остаётся общий.
-Тексты команд — в app/texts.py (COMMANDS_*).
+  refresh_commands(bot, config, user_id). Снятому админу личный список удаляется - остаётся общий.
+Тексты команд - в app/texts.py (COMMANDS_*).
 """
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ def _commands(pairs: list[tuple[str, str]]) -> list[BotCommand]:
 
 
 async def remove_admin_commands(bot: Bot, chat_id: int) -> None:
-    """Личный список удаляется — человек видит общий (как обычный пользователь)."""
+    """Личный список удаляется - человек видит общий (как обычный пользователь)."""
     try:
         await bot.delete_my_commands(scope=BotCommandScopeChat(chat_id=chat_id))
     except Exception as e:  # noqa: BLE001
@@ -73,15 +73,15 @@ async def remove_admin_commands(bot: Bot, chat_id: int) -> None:
 
 
 async def refresh_commands(bot: Bot, config: Config, user_id: int) -> None:
-    """Меню команд этого человека — по его текущей роли."""
+    """Меню команд этого человека - по его текущей роли."""
     role = role_of(config, user_id)
     if role == "user":
         await remove_admin_commands(bot, user_id)
         return
     try:
         await bot.set_my_commands(_commands(menu_for(role)), scope=BotCommandScopeChat(chat_id=user_id))
-    except Exception as e:  # noqa: BLE001 — человек ещё не писал боту
-        log.warning("команды для %s (%s) не установлены (%s) — пусть он нажмёт /start", user_id, role, e)
+    except Exception as e:  # noqa: BLE001 - человек ещё не писал боту
+        log.warning("команды для %s (%s) не установлены (%s): пусть он нажмёт /start", user_id, role, e)
 
 
 async def set_commands(bot: Bot, config: Config) -> None:

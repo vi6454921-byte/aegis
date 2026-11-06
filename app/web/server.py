@@ -1,5 +1,5 @@
-"""Mini App в том же процессе: решения /s/{token}/... (aiohttp). /g/{token} — старые кнопки подарков:
-перенаправляем на текущую ссылку подарка (подарки теперь — ссылки в тексте сообщений)."""
+"""Mini App в том же процессе: решения /s/{token}/... (aiohttp). /g/{token} - старые кнопки подарков:
+перенаправляем на текущую ссылку подарка (подарки теперь - ссылки в тексте сообщений)."""
 from __future__ import annotations
 
 import logging
@@ -30,7 +30,7 @@ HEADERS = {
     "Cache-Control": "no-store",
 }
 
-# С nosniff браузер не выполнит скрипт/стиль с неверным типом — задаём типы явно.
+# С nosniff браузер не выполнит скрипт/стиль с неверным типом - задаём типы явно.
 for _ext, _type in {".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
                     ".svg": "image/svg+xml", ".json": "application/json", ".wasm": "application/wasm",
                     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",

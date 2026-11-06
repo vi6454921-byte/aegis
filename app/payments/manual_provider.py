@@ -13,7 +13,7 @@ from app.utils.money import fmt_rub
 class ManualPaymentProvider(PaymentProvider):
     """Перевод по реквизитам (карта/СБП): клиент присылает чек, админ 1 или 2 уровня подтверждает поступление.
 
-    Реквизиты — настройка «manual_pay_details» («⚙️ Настройки» → «💳 Оплата»). Возврат — только на баланс бота.
+    Реквизиты - настройка «manual_pay_details» («⚙️ Настройки» → «💳 Оплата»). Возврат - только на баланс бота.
     """
 
     name = "manual"
@@ -36,4 +36,4 @@ class ManualPaymentProvider(PaymentProvider):
             pid=payment.id, title=title, amount=fmt_rub(payment.amount_rub), details=details), reply_markup=kb)
 
     async def refund(self, bot: Bot, payment: Payment) -> bool:
-        return False  # деньги переводом возвращаются вручную; в боте — на баланс
+        return False  # деньги переводом возвращаются вручную; в боте - на баланс

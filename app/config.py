@@ -1,7 +1,7 @@
 """Настройки процесса из .env (pydantic-settings).
 
 Здесь только то, что нужно для запуска. Всё, что админ меняет на лету
-(цены, лимиты, тексты), хранится в таблице settings — см. app/services/settings.py.
+(цены, лимиты, тексты), хранится в таблице settings - см. app/services/settings.py.
 """
 from __future__ import annotations
 
@@ -41,15 +41,15 @@ class Config(BaseSettings):
     backup_hour: int = Field(default=4, alias="BACKUP_HOUR")
     backup_keep: int = Field(default=14, alias="BACKUP_KEEP")
     # Закреплённые админы 2 уровня (v2.2): ники без @ через запятую, регистр не важен. Ник привязывается к
-    # Telegram id при первом сообщении боту — дальше права только по id (см. app/services/pinned.py).
+    # Telegram id при первом сообщении боту - дальше права только по id (см. app/services/pinned.py).
     senior_admin_usernames_raw: str = Field(default="badVInq,dimaslavikov1", alias="SENIOR_ADMIN_USERNAMES")
-    # Необязательно: id закреплённых админов числом — тогда привязка по нику не нужна.
+    # Необязательно: id закреплённых админов числом - тогда привязка по нику не нужна.
     senior_admin_ids_raw: str = Field(default="", alias="SENIOR_ADMIN_IDS")
 
-    # Админы, назначенные в боте (таблица admins): {user_id: уровень}. Кэш процесса — см. app/services/roles.py
+    # Админы, назначенные в боте (таблица admins): {user_id: уровень}. Кэш процесса - см. app/services/roles.py
     _staff: dict[int, int] = PrivateAttr(default_factory=dict)
     _staff_loaded: bool = PrivateAttr(default=False)
-    # Закреплённые админы: id с admins.pinned и привязки ников {ник: (id, состояние)}, где состояние —
+    # Закреплённые админы: id с admins.pinned и привязки ников {ник: (id, состояние)}, где состояние -
     # active (действует), owner (снят владельцем в боте) или env (ник убрали из .env)
     _pinned: set[int] = PrivateAttr(default_factory=set)
     _pinned_bind: dict[str, tuple[int, str]] = PrivateAttr(default_factory=dict)
@@ -91,7 +91,7 @@ class Config(BaseSettings):
 
     @property
     def staff(self) -> dict[int, int]:
-        """Все админы: {user_id: уровень}. Владельцы — уровень 2."""
+        """Все админы: {user_id: уровень}. Владельцы - уровень 2."""
         result = {uid: lvl for uid, lvl in self._staff.items() if lvl > 0}
         for uid in self.admin_ids:
             result[uid] = 2
@@ -115,7 +115,7 @@ class Config(BaseSettings):
         if not url:
             return None
         if not url.startswith("https://"):
-            log.warning("WEBAPP_BASE_URL должен начинаться с https:// — Mini App отключены")
+            log.warning("WEBAPP_BASE_URL должен начинаться с https://, Mini App отключены")
             return None
         return url
 

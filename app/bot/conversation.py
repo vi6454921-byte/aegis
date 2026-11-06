@@ -1,17 +1,16 @@
-"""v2.3: переписка админа с клиентом по заказу (и по обращению) — режим чата и доставка.
+"""v2.3: переписка админа с клиентом по заказу (и по обращению) - режим чата и доставка.
 
 «✉️ Ответить» в карточке заказа, в карточке обращения или под уведомлением о новом заказе включает режим чата:
-строка в admin_chats (переживает перезапуск бота). Всё, что админ присылает боту — текст, фото, альбомы, файлы
-(HTML, ZIP…), голосовые, видео, стикеры, — сразу уходит клиенту с пометкой «По заказу №…», а под сообщением
+строка в admin_chats (переживает перезапуск бота). Всё, что админ присылает боту - текст, фото, альбомы, файлы
+(HTML, ZIP…), голосовые, видео, стикеры, - сразу уходит клиенту с пометкой «По заказу №…», а под сообщением
 админа появляется ответ «✅ Доставлено» (или понятная ошибка: клиент заблокировал бота и т. п.).
 
-Режим действует, пока админ не нажмёт «✅ Завершить» (или «📦 Готово — отправить клиенту»). Другие кнопки
-и вводы админки его не ломают: пока админ вводит цену или ищет пользователя, сообщение идёт туда, а следующее —
-снова клиенту. В /admin есть «↩️ Вернуться в чат по заказу №…».
+Режим действует, пока админ не нажмёт «✅ Завершить» (или «📦 Готово - отправить клиенту»). Другие кнопки
+и вводы админки его не ломают: пока админ вводит цену или ищет пользователя, сообщение идёт туда, а следующее - снова клиенту. В /admin есть «↩️ Вернуться в чат по заказу №…».
 
 Ответ админа свайпом на уведомление о заказе доставляется так же. Клиент отвечает свайпом (из любого шага) или
-кнопкой «💬 Ответить» — всё складывается в одну переписку по заказу (tickets kind=order, ticket_messages):
-кто, что и когда — видно в карточке заказа («💬 Переписка»)."""
+кнопкой «💬 Ответить» - всё складывается в одну переписку по заказу (tickets kind=order, ticket_messages):
+кто, что и когда - видно в карточке заказа («💬 Переписка»)."""
 from __future__ import annotations
 
 import html
@@ -24,6 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app import texts
+from app.bot import designs
 from app.bot import files as upl
 from app.bot.callbacks import AdminCb
 from app.bot.keyboards import cb, ik, order_alert_kb
@@ -31,6 +31,7 @@ from app.bot.notify import mark_headers
 from app.bot.support import Sent, album_to_user, content_type, mark_answered, message_text, team_header, to_user
 from app.config import Config
 from app.db.models import AdminChat, Order, Ticket, TicketMessage, User
+from app.services import design as dsvc
 from app.services import orders as svc
 from app.services import tickets
 from app.services.users import short_name
@@ -67,9 +68,9 @@ class Target:
 
 
 def user_label(user: User | None) -> str:
-    """«@username», а без ника — «Имя (id 123)». Экранировано для HTML."""
+    """«@username», а без ника - «Имя (id 123)». Экранировано для HTML."""
     if user is None:
-        return "—"
+        return "-"
     if user.username:
         return f"@{html.escape(user.username)}"
     return f"{html.escape(user.first_name or texts.CHAT_NO_NAME)} (id <code>{user.id}</code>)"
@@ -107,7 +108,7 @@ async def start(session: AsyncSession, admin_id: int, target: Target) -> str | N
 
 
 async def finish(session: AsyncSession, admin_id: int, target: Target | None = None) -> AdminChat | None:
-    """Выключает режим чата (если target задан — только если чат именно про него). Возвращает снятый чат."""
+    """Выключает режим чата (если target задан - только если чат именно про него). Возвращает снятый чат."""
     chat = await get_chat(session, admin_id)
     if chat is None or (target is not None and not target.same(chat)):
         return None
@@ -117,7 +118,7 @@ async def finish(session: AsyncSession, admin_id: int, target: Target | None = N
 
 
 async def finish_ticket(session: AsyncSession, ticket_id: int) -> list[AdminChat]:
-    """Обращение (без заказа) закрыли — режим чата по нему выключаем у всех админов. Коммитит."""
+    """Обращение (без заказа) закрыли - режим чата по нему выключаем у всех админов. Коммитит."""
     rows = list((await session.execute(select(AdminChat).where(AdminChat.ticket_id == ticket_id,
                                                                AdminChat.order_id.is_(None)))).scalars().all())
     for chat in rows:
@@ -128,7 +129,7 @@ async def finish_ticket(session: AsyncSession, ticket_id: int) -> list[AdminChat
 
 
 async def thread_ticket(session: AsyncSession, target: Target) -> Ticket | None:
-    """Обращение, в которое пишем: по заказу — единая ветка заказа (создаём при первом сообщении)."""
+    """Обращение, в которое пишем: по заказу - единая ветка заказа (создаём при первом сообщении)."""
     if target.order_id:
         ticket, _ = await tickets.open_or_append(session, target.user_id, "order", now_utc(), target.order_id)
         return ticket
@@ -136,7 +137,7 @@ async def thread_ticket(session: AsyncSession, target: Target) -> Ticket | None:
 
 
 def chat_kb(target: Target, order: Order | None) -> InlineKeyboardMarkup:
-    """Под заголовком чата и под каждым «✅ Доставлено»: «📦 Готово — отправить клиенту» (если можно) и «✅ Завершить»."""
+    """Под заголовком чата и под каждым «✅ Доставлено»: «📦 Готово - отправить клиенту» (если можно) и «✅ Завершить»."""
     rows = []
     if order is not None and order.status in ("paid", "in_work") and (svc.is_explain(order) or svc.can_finish(order)):
         rows.append([cb(texts.CHAT_READY_BTN, AdminCb(s="c", a="done", id=order.id))])
@@ -153,13 +154,13 @@ def return_btn(chat: AdminChat):  # noqa: ANN201
 
 # ------------------------------------------------------------------ история
 async def history_lines(session: AsyncSession, rows: list[TicketMessage], width: int = 200) -> list[str]:
-    """«👤 Клиент · 12.05 14:03 — текст» / «🛡 Аня · 12.05 14:05 — [📷 фото] подпись»."""
+    """«👤 Клиент · 12.05 14:03 - текст» / «🛡 Аня · 12.05 14:05 - [📷 фото] подпись»."""
     names: dict[int | None, str] = {}
     out = []
     for m in rows:
         if m.content_type == "album":
             continue
-        body = tickets.preview_of(m.text, m.content_type)[:width] or "—"
+        body = tickets.preview_of(m.text, m.content_type)[:width] or "-"
         if m.direction == "in":
             who = texts.CHAT_FROM_CLIENT
         else:
@@ -167,7 +168,7 @@ async def history_lines(session: AsyncSession, rows: list[TicketMessage], width:
                 names[m.admin_id] = short_name(await session.get(User, m.admin_id)) if m.admin_id \
                     else texts.CHAT_BOT_NAME
             who = texts.CHAT_FROM_ADMIN.format(name=names[m.admin_id])
-        out.append(f"{who} · {fmt_dt(m.created_at)} — {html.escape(body)}")
+        out.append(f"{who} · {fmt_dt(m.created_at)}: {html.escape(body)}")
     return out
 
 
@@ -209,12 +210,14 @@ async def send(bot: Bot, session: AsyncSession, config: Config, admin_id: int, t
     ticket = await thread_ticket(session, target)
     if ticket is None:
         return Sent(error=texts.NOT_FOUND), order
-    if order is not None and svc.is_explain(order) and order.status == "paid":  # начал объяснять — взял в работу
-        order = await svc.take_in_work(session, order.id, now, admin_id)
+    design = dsvc.is_design(order)
+    if order is not None and (svc.is_explain(order) or design) and order.status == "paid":
+        order = await svc.take_in_work(session, order.id, now, admin_id)  # начал объяснять/делать - взял в работу
         admin = await session.get(User, admin_id)
+        mark = texts.DESIGN_WORKING if design else texts.CHAT_EXPLAINING
         await mark_headers(bot, session, config, "order", order.id,
-                           texts.CHAT_EXPLAINING.format(admin=short_name(admin), time=f"{to_local(now):%H:%M}"),
-                           markup_for=lambda _lvl, oid=order.id: order_alert_kb(oid))
+                           mark.format(admin=short_name(admin), time=f"{to_local(now):%H:%M}"),
+                           markup_for=lambda _lvl, oid=order.id: designs.admin_kb(oid) if design else order_alert_kb(oid))
     was_open = ticket.status == "open"
     header = user_header(target, ticket)
     sent = await (to_user(bot, ticket, msgs[0], header) if len(msgs) == 1
@@ -233,6 +236,8 @@ async def send(bot: Bot, session: AsyncSession, config: Config, admin_id: int, t
             await mark_answered(bot, session, config, ticket, await session.get(User, admin_id), admin_id, now)
     if order is not None:
         order = await svc.note_chat_reply(session, order.id, admin_id, sent.ok) or order
+    if order is not None and design and sent.ok and designs.is_result([content_type(m) for m in msgs]):
+        order = await designs.on_result(bot, session, config, admin_id, order)  # v2.4: готовый файл - заказ готов
     return sent, order
 
 
@@ -247,11 +252,14 @@ def confirm_text(sent: Sent, n: int) -> str:
 async def relay(bot: Bot, session: AsyncSession, config: Config, admin_id: int, target: Target,
                 msgs: list[Message], *, chat_mode: bool) -> Sent:
     """Доставить и ответить админу на его сообщение: «✅ Доставлено» / ошибка.
-    chat_mode — под ответом кнопки «✅ Завершить» (и «📦 Готово»), иначе (свайп) — «📨 Переписка»."""
+    chat_mode - под ответом кнопки «✅ Завершить» (и «📦 Готово»), иначе (свайп) - «📨 Переписка»."""
     if any(content_type(m) in SERVICE_TYPES for m in msgs):
         return Sent(error=texts.CHAT_SERVICE_MESSAGE)
     sent, order = await send(bot, session, config, admin_id, target, msgs)
     text = confirm_text(sent, len(msgs))
+    if sent.ok and dsvc.is_design(order) and order.status == "done" \
+            and designs.is_result([content_type(m) for m in msgs]):
+        text += "\n" + texts.ADMIN_DESIGN_DONE_NOTE.format(id=order.id)
     if chat_mode:
         kb = chat_kb(target, order)
     elif target.order_id:
@@ -263,7 +271,7 @@ async def relay(bot: Bot, session: AsyncSession, config: Config, admin_id: int, 
         text += f" · {target.mark}"
     try:
         await msgs[0].reply(text, reply_markup=kb)
-    except Exception:  # noqa: BLE001 — подтверждение не должно ломать доставку
+    except Exception:  # noqa: BLE001 - подтверждение не должно ломать доставку
         log.warning("не удалось подтвердить доставку админу %s", admin_id, exc_info=True)
     return sent
 
@@ -274,7 +282,7 @@ _albums: dict[tuple[int, str], tuple[Target, bool, list[Message]]] = {}
 
 async def relay_or_buffer(bot: Bot, session: AsyncSession, sessionmaker: async_sessionmaker, config: Config,
                           message: Message, target: Target, *, chat_mode: bool) -> None:
-    """Обычное сообщение — сразу; альбом — копим (Telegram присылает его по одному фото) и отправляем целиком."""
+    """Обычное сообщение - сразу; альбом - копим (Telegram присылает его по одному фото) и отправляем целиком."""
     admin_id = message.from_user.id
     album = message.media_group_id
     if not album:

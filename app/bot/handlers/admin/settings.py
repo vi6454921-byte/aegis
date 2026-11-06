@@ -1,4 +1,4 @@
-"""Админка → настройки: цены, срочность, скидки, лимиты, рефералка, оплата (режим — с подтверждением),
+"""Админка → настройки: цены, срочность, скидки, лимиты, рефералка, оплата (режим - с подтверждением),
 тексты, ссылки на подарки."""
 from __future__ import annotations
 
@@ -50,27 +50,27 @@ HINTS = {
     "money_list": "Суммы через запятую, например <code>200, 500, 1000</code>.",
     "money_map": "Пакет=бонус через запятую, например <code>500=50, 1000=150</code>.",
     "text": "Пришли новый текст. Жирный, курсив и ссылки сохранятся.",
-    "template": "Пришли новый текст поста. Обязательно оставь <code>{link}</code> — туда подставится реф-ссылка "
+    "template": "Пришли новый текст поста. Обязательно оставь <code>{link}</code>: туда подставится реф-ссылка "
                 "пользователя. Пользователь увидит текст в рамке, откуда его удобно скопировать.",
     "str": "Публичный канал: <code>@username</code> или ссылка <code>t.me/username</code>. "
-           "<code>-</code> — выключить канал и бонусы за подписку.",
+           "<code>-</code>: выключить канал и бонусы за подписку.",
     "url": "Пришли ссылку, например <code>https://username.github.io/page/</code>. "
-           "<code>-</code> — скрыть этот подарок.",
+           "<code>-</code>: скрыть этот подарок.",
 }
 KEY_HINTS = {
-    "urgency_free_hours": "Например, <code>48</code>: дедлайн через 48 ч и позже — без наценки.",
-    "urgency_mid_hours": "Например, <code>24</code>: дедлайн меньше чем через 24 ч — максимальная наценка.",
-    "urgency_ge72_pct": "Обычно <code>1</code> — без наценки.",
-    "channel_hold_hours": "Если отписаться раньше — бонус спишется. <code>0</code> — без удержания.",
-    "referral_bonus": "<code>0</code> — выключить (основной бонус — за подписку друга на канал).",
-    "pay_reminder_hours": "<code>0</code> — не напоминать.",
+    "urgency_free_hours": "Например, <code>48</code>: дедлайн через 48 ч и позже, без наценки.",
+    "urgency_mid_hours": "Например, <code>24</code>: дедлайн меньше чем через 24 ч, максимальная наценка.",
+    "urgency_ge72_pct": "Обычно <code>1</code>: без наценки.",
+    "channel_hold_hours": "Если отписаться раньше: бонус спишется. <code>0</code>, без удержания.",
+    "referral_bonus": "<code>0</code>: выключить (основной бонус, за подписку друга на канал).",
+    "pay_reminder_hours": "<code>0</code>: не напоминать.",
     "profile_recheck_days": "Через сколько дней после начисления проверить, что ссылка ещё в профиле. "
-                            "<code>0</code> — не перепроверять.",
-    "post_views_step": "Например, <code>100</code>: за каждые 100 подтверждённых просмотров — сумма из "
+                            "<code>0</code>: не перепроверять.",
+    "post_views_step": "Например, <code>100</code>: за каждые 100 подтверждённых просмотров, сумма из "
                        "следующей настройки.",
-    "post_views_cap": "<code>0</code> — без потолка.",
-    "post_report_cooldown_hours": "<code>0</code> — без паузы между отчётами.",
-    "admin_give_confirm_over": "Например, <code>10000</code>: выдача или списание больше 10 000 ₽ — с повторным "
+    "post_views_cap": "<code>0</code>: без потолка.",
+    "post_report_cooldown_hours": "<code>0</code>: без паузы между отчётами.",
+    "admin_give_confirm_over": "Например, <code>10000</code>: выдача или списание больше 10 000 ₽, с повторным "
                                "подтверждением «проверь нули».",
 }
 
@@ -97,22 +97,22 @@ def group_extra(g: str, s: RuntimeSettings) -> list[str]:
     if g == "channel":
         lines = [""]
         if not s.channel:
-            lines.append("📢 Канал выключен — бонусов за подписку нет.")
+            lines.append("📢 Канал выключен: бонусов за подписку нет.")
         else:
             lines.append(f"📢 Бот должен быть <b>администратором</b> {html.escape(s.channel)} (минимальных прав "
-                         "достаточно) — иначе Telegram не даёт проверить подписку.")
+                         "достаточно): иначе Telegram не даёт проверить подписку.")
             if ch.health.error:
                 lines.append(f"⚠️ Последняя проверка не удалась: <i>{html.escape(ch.health.error[:200])}</i>")
             elif ch.health.ok_at:
                 lines.append("✅ Проверка подписки работает.")
-        lines.append("<i>Защита от накрутки: бонус за подписку — один раз на аккаунт; друг засчитывается, только "
+        lines.append("<i>Защита от накрутки: бонус за подписку, один раз на аккаунт; друг засчитывается, только "
                      "если впервые пришёл по ссылке; пригласивший тоже должен быть подписан; отписка в течение "
                      "удержания отменяет бонус; есть лимит друзей в сутки; забаненным не начисляется.</i>")
         return lines
     if g == "tasks":
         lines = guide.task_lines(s)
-        return ["", "<b>Так видят клиенты</b> (в «🎁 Бонусы и акции»):", *(lines or ["— оба задания выключены"]),
-                "", "<i>Награды — обычные рубли на баланс: не сгорают, ими можно оплатить заказ целиком. "
+        return ["", "<b>Так видят клиенты</b> (в «🎁 Бонусы и акции»):", *(lines or ["• оба задания выключены"]),
+                "", "<i>Награды: обычные рубли на баланс, они не сгорают, ими можно оплатить заказ целиком. "
                     "Заявки и отчёты проверяют админы 1 и 2 уровня в «🎯 Задания».</i>"]
     if g == "admin_money":
         return ["", "<i>Выдать или списать деньги: «🔐 Управление» → «💸 Деньги», карточка пользователя, команда "
@@ -120,9 +120,9 @@ def group_extra(g: str, s: RuntimeSettings) -> list[str]:
                     "на балансе; списание не уводит баланс ниже нуля.</i>"]
     if g == "gifts":
         block = gifts.welcome_block(s)
-        return ["", "<b>Так видят клиенты</b> (в приветствии и в «🎁 Подарки»):", block or "— все подарки скрыты",
-                "", "<i>Подарки — только ссылки в тексте сообщения, без кнопок и файлов. Новая ссылка действует "
-                    "сразу. Названия подарков — в app/services/gifts.py.</i>"]
+        return ["", "<b>Так видят клиенты</b> (в приветствии и в «🎁 Подарки»):", block or "• все подарки скрыты",
+                "", "<i>Подарки: только ссылки в тексте сообщения, без кнопок и файлов. Новая ссылка действует "
+                    "сразу. Названия подарков: в app/services/gifts.py.</i>"]
     return []
 
 
@@ -199,18 +199,18 @@ async def s_key(call: CallbackQuery, callback_data: AdminCb, state: FSMContext, 
     label = META[key][1]
     kb = ik([cb(f"↩️ По умолчанию: {format_value(key, default_value(key))}"[:60], AdminCb(s="s", a="reset", v=key))],
             [cancel_btn(back_to(key))])
-    if kind == "text":  # текущий текст — отдельным сообщением, чтобы его было удобно скопировать и поправить
-        await call.message.answer(f"✏️ <b>{label}</b> — сейчас так 👇")
+    if kind == "text":  # текущий текст - отдельным сообщением, чтобы его было удобно скопировать и поправить
+        await call.message.answer(f"✏️ <b>{label}</b>: сейчас так 👇")
         await call.message.answer(s[key] or "<i>(пусто)</i>")
         text = HINTS["text"]
         if key == "welcome_text":
             text += f"\nПодстановки: {html.escape(WELCOME_PLACEHOLDERS)}"
         if key == "manual_pay_details":
-            text += "\n<code>-</code> — очистить."
+            text += "\n<code>-</code>: очистить."
         await ask_new(call.message, state, AdminSG.setting_value, text, kb, key=key)
         return
-    if kind == "template":  # шаблон — простой текст: показываем как есть, в рамке (удобно скопировать)
-        await call.message.answer(f"✏️ <b>{label}</b> — сейчас так 👇")
+    if kind == "template":  # шаблон - простой текст: показываем как есть, в рамке (удобно скопировать)
+        await call.message.answer(f"✏️ <b>{label}</b>: сейчас так 👇")
         await call.message.answer(f"<pre>{html.escape(str(s[key]))}</pre>")
         await ask_new(call.message, state, AdminSG.setting_value, HINTS["template"], kb, key=key)
         return
@@ -227,7 +227,7 @@ async def s_value(message: Message, state: FSMContext, session: AsyncSession, s:
         return
     kind = setting_type(key)
     raw = (message.html_text if kind == "text" else message.text) or ""
-    if kind == "url":  # ссылка, спрятанная в тексте («Добавить ссылку» в Telegram), — берём сам адрес
+    if kind == "url":  # ссылка, спрятанная в тексте («Добавить ссылку» в Telegram), - берём сам адрес
         raw = next((e.url for e in (message.entities or []) if e.type == "text_link" and e.url), raw)
     try:
         value = parse_value_checked(key, raw, s)
@@ -278,7 +278,7 @@ async def s_reset(call: CallbackQuery, callback_data: AdminCb, state: FSMContext
     await call.answer("Сброшено к значению по умолчанию")
     text, kb = group_view(group_of(key), s2)
     if data.get("prompt_mid") == getattr(call.message, "message_id", None):
-        await show(call, text, kb)  # вопрос был на месте экрана — возвращаем экран туда же
+        await show(call, text, kb)  # вопрос был на месте экрана - возвращаем экран туда же
     else:
         await close_prompt(call.bot, data)
         await call.message.answer(text, reply_markup=kb)
@@ -302,7 +302,7 @@ def _rate(s: RuntimeSettings) -> str:
 
 
 async def _real_pending(session: AsyncSession) -> int:
-    """Выставленные, но не оплаченные счета звёздами/переводом — при возврате теста они остаются в силе."""
+    """Выставленные, но не оплаченные счета звёздами/переводом - при возврате теста они остаются в силе."""
     return int(await session.scalar(select(func.count(Payment.id)).where(
         Payment.status == "pending", Payment.provider.in_(REAL_PAYMENT_MODES))) or 0)
 
@@ -318,23 +318,23 @@ async def pm_view(session: AsyncSession, s: RuntimeSettings, note: str = "") -> 
     rows = []
     if mode == "test":
         lines.append(f"Деньги воображаемые: под счётом кнопка «{PAY_TEST_BTN}», ничего не списывается.")
-        lines += ["", "При включении настоящей оплаты тестовая исчезает полностью — кнопок теста не останется, "
+        lines += ["", "При включении настоящей оплаты тестовая исчезает полностью: кнопок теста не останется, "
                       "тестовые счета и деньги уберутся. Вернуть тест можно здесь же."]
         rows += [[cb(MODE_ON["stars"], AdminCb(s="s", a="pm_ask", v="stars"))],
                  [cb(MODE_ON["manual"], AdminCb(s="s", a="pm_ask", v="manual"))]]
     else:
         if mode == "stars":
-            lines.append(f"Клиенты платят звёздами прямо в Telegram. Курс: {_rate(s)} — меняется в «💳 Оплата».")
+            lines.append(f"Клиенты платят звёздами прямо в Telegram. Курс: {_rate(s)}, меняется в «💳 Оплата».")
         else:
             lines.append("Клиент переводит по реквизитам и присылает чек, админ подтверждает «✅ Оплата пришла».")
             if _no_details(s):
-                lines.append("⚠️ Реквизиты не указаны — впиши их в «💳 Оплата» → «Реквизиты для перевода».")
+                lines.append("⚠️ Реквизиты не указаны: впиши их в «💳 Оплата» → «Реквизиты для перевода».")
         lines.append("Тестовой оплаты нет: кнопок теста клиенты не видят.")
         other = "manual" if mode == "stars" else "stars"
         rows += [[cb(MODE_TO[other], AdminCb(s="s", a="pm_ask", v=other))],
                  [cb(MODE_ON["test"], AdminCb(s="s", a="pm_ask", v="test"))]]
         if any((await maintenance.test_data_counts(session)).values()):
-            lines.append("🧹 Остались тестовые заказы и история (🧪) — их можно удалить в «💾 Данные».")
+            lines.append("🧹 Остались тестовые заказы и история (🧪): их можно удалить в «💾 Данные».")
             rows.append([cb("🧹 Удалить тестовые данные", AdminCb(s="d", a="clear"))])
     rows.append([cb("⬅️ Назад", AdminCb(s="s", a="grp", v="pay")), menu_btn()])
     return "\n".join(lines), ik(*rows)
@@ -355,21 +355,21 @@ async def confirm_text(session: AsyncSession, s: RuntimeSettings, target: str) -
             "🧪 <b>Вернуть тестовую оплату?</b>",
             f"• Новые счета станут тестовыми: под ними кнопка «{PAY_TEST_BTN}», деньги воображаемые.",
             "• Настоящие оплаты не принимаются, пока снова не включишь звёзды или перевод."
-            + (f" Уже выставленные настоящие счета ({n}) остаются в силе — если клиент оплатит, деньги зачислятся "
+            + (f" Уже выставленные настоящие счета ({n}) остаются в силе: если клиент оплатит, деньги зачислятся "
                "как обычно." if n else ""),
-            "⚠️ Пока включён тест, любой клиент может «оплатить» заказ воображаемыми деньгами — включай его только "
+            "⚠️ Пока включён тест, любой клиент может «оплатить» заказ воображаемыми деньгами: включай его только "
             "для проверки бота."])
     how = ("звёздами прямо в Telegram (курс " + _rate(s) + ")" if target == "stars"
            else "переводом по реквизитам с проверкой чека")
     title = {"stars": "⭐ <b>Включить оплату звёздами?</b>", "manual": "🏦 <b>Включить оплату переводом?</b>"}[target]
-    if current != "test":  # между настоящими способами — тестовых денег уже нет
-        return "\n".join([title, f"Новые счета — {how}.",
+    if current != "test":  # между настоящими способами - тестовых денег уже нет
+        return "\n".join([title, f"Новые счета: {how}.",
                           "Уже выставленные счета старым способом остаются в силе."])
     left = await paymode.leftovers(session)
     lines = [title, "Тестовая оплата исчезнет полностью:",
-             f"• новые счета — только {how}; кнопки «{PAY_TEST_BTN}» больше не будет;"]
+             f"• новые счета: только {how}; кнопки «{PAY_TEST_BTN}» больше не будет;"]
     if left.invoices:
-        lines.append(f"• неоплаченные тестовые счета отменятся: <b>{left.invoices}</b> — их кнопки перестанут "
+        lines.append(f"• неоплаченные тестовые счета отменятся: <b>{left.invoices}</b>, их кнопки перестанут "
                      "работать, клиент просто нажмёт «💳 Оплатить» в заказе ещё раз;")
     if left.rub or left.bonus:
         money = " и ".join(x for x in (f"<b>{fmt_rub(left.rub)}</b>" if left.rub else "",
@@ -377,7 +377,7 @@ async def confirm_text(session: AsyncSession, s: RuntimeSettings, target: str) -
         lines.append(f"• тестовые деньги уберутся с балансов: {money} (клиентов: {left.users}). "
                      "Настоящие рубли и бонусы не трогаются;")
     if left.orders_open:
-        lines.append(f"• тестовые заказы в очереди и в работе ({left.orders_open}) останутся с пометкой 🧪 — их можно "
+        lines.append(f"• тестовые заказы в очереди и в работе ({left.orders_open}) останутся с пометкой 🧪: их можно "
                      "доделать или удалить в «💾 Данные → 🧹 Очистить тестовые данные».")
     lines += ["", "Вернуть тест можно в любой момент: «⚙️ Настройки → 💳 Оплата → Режим оплаты»."]
     return "\n".join(lines)

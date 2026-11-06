@@ -10,6 +10,7 @@ from datetime import datetime
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import actionlog
 from app.db.models import Order, Payment, User
 from app.services.admin_log import log_admin
 from app.services.ledger import (
@@ -22,7 +23,7 @@ from app.services.ledger import (
     lock_user,
 )
 from app.services.locks import app_lock
-from app.services.orders import REFUNDABLE, OrderError
+from app.services.orders import PAYABLE, REFUNDABLE, OrderError
 from app.services.pricing import split_payment
 from app.services.referrals import RevokeResult, revoke_for_order
 from app.utils.money import stars_for
@@ -40,7 +41,7 @@ async def find_by_payload(session: AsyncSession, payload: str) -> Payment | None
 
 
 async def _cancel_pending(session: AsyncSession, order_id: int) -> None:
-    """Старые неоплаченные счета заказа — в отмену. Переводы с присланным чеком не трогаем: их проверяет админ."""
+    """Старые неоплаченные счета заказа - в отмену. Переводы с присланным чеком не трогаем: их проверяет админ."""
     await session.execute(update(Payment).where(Payment.order_id == order_id, Payment.status == "pending",
                                                 Payment.claimed_at.is_(None))
                           .values(status="cancelled"))
@@ -52,7 +53,7 @@ async def start_order_payment(session: AsyncSession, order_id: int, user_id: int
         order = await session.get(Order, order_id, populate_existing=True)
         if order is None or order.user_id != user_id:
             raise OrderError("Заказ не найден.")
-        if order.status != "awaiting_payment" or not order.price_final:
+        if order.status not in PAYABLE or not order.price_final:
             raise OrderError("Этот заказ сейчас не ждёт оплаты.")
         await _cancel_pending(session, order.id)
         user = await lock_user(session, user_id)
@@ -87,7 +88,7 @@ async def start_topup(session: AsyncSession, user_id: int, amount: int, s, now: 
 
 async def check_pre_checkout(session: AsyncSession, payload: str, total_amount: int, currency: str,
                              user_id: int | None = None) -> str | None:
-    """None — можно принимать оплату, иначе код ошибки. Отвечать Telegram нужно < 10 с."""
+    """None - можно принимать оплату, иначе код ошибки. Отвечать Telegram нужно < 10 с."""
     payment = await find_by_payload(session, payload)
     if payment is None or payment.status != "pending" or payment.provider != "stars":
         return "stale"
@@ -97,10 +98,10 @@ async def check_pre_checkout(session: AsyncSession, payload: str, total_amount: 
         return "amount"
     user = await session.get(User, payment.user_id, populate_existing=True)
     if user is not None and user.is_banned:
-        return "banned"  # бот для него закрыт — новые оплаты не принимаем
+        return "banned"  # бот для него закрыт - новые оплаты не принимаем
     if payment.purpose == "order":
         order = await session.get(Order, payment.order_id, populate_existing=True)
-        if order is None or order.status != "awaiting_payment":
+        if order is None or order.status not in PAYABLE:
             return "order"
     return None
 
@@ -118,7 +119,7 @@ async def confirm_payment(session: AsyncSession, payment_id: int, s, now: dateti
     """Идемпотентно проводит платёж: pending → paid один раз, charge_id уникален.
 
     Счёт, отменённый у нас (status=cancelled), но всё-таки оплаченный в Telegram (пришёл charge_id),
-    тоже зачисляется — деньги не теряются: на заказ, если он ещё ждёт оплаты, иначе на баланс.
+    тоже зачисляется - деньги не теряются: на заказ, если он ещё ждёт оплаты, иначе на баланс.
     """
     async with app_lock():
         payment = await session.get(Payment, payment_id, populate_existing=True)
@@ -147,22 +148,24 @@ async def confirm_payment(session: AsyncSession, payment_id: int, s, now: dateti
                 await credit_bonus(session, user, payment.topup_bonus, source="topup_bonus", kind="topup_bonus",
                                    ttl_days=int(s.bonus_ttl_days), now=now, **meta)
             await session.commit()
+            actionlog.topup(user, payment)
             return ConfirmResult("topup_ok", payment, None, user)
 
         order = await session.get(Order, payment.order_id, populate_existing=True)
         if payment.amount_rub > 0:
             await credit_rub(session, user, payment.amount_rub, "payment_in", order_id=order.id, **meta)
         need_rub = payment.plan_balance + payment.amount_rub
-        ok = (order.status == "awaiting_payment" and order.price_final == payment.plan_bonus + need_rub
+        ok = (order.status in PAYABLE and order.price_final == payment.plan_bonus + need_rub
               and await available_bonus(session, user.id, now) >= payment.plan_bonus
               and user.balance_rub >= need_rub)
         if not ok:
-            if payment.amount_rub == 0:  # денег не пришло (оплата с баланса) — просто отменяем попытку
+            if payment.amount_rub == 0:  # денег не пришло (оплата с баланса) - просто отменяем попытку
                 payment.status = "cancelled"
                 payment.paid_at = None
                 await session.commit()
                 return ConfirmResult("failed", payment, order, user)
             await session.commit()
+            actionlog.to_balance(user, payment, order)
             return ConfirmResult("credited_to_balance", payment, order, user)
         try:
             if payment.plan_bonus:
@@ -170,7 +173,7 @@ async def confirm_payment(session: AsyncSession, payment_id: int, s, now: dateti
                                   **meta)
             if need_rub:
                 await debit_rub(session, user, need_rub, "order_pay", order_id=order.id, **meta)
-        except InsufficientFunds:  # pragma: no cover — проверено выше
+        except InsufficientFunds:  # pragma: no cover - проверено выше
             await session.rollback()
             raise
         order.paid_bonus = payment.plan_bonus
@@ -180,6 +183,7 @@ async def confirm_payment(session: AsyncSession, payment_id: int, s, now: dateti
         order.paid_at = now
         order.is_test = payment.is_test
         await session.commit()
+        actionlog.order_paid(user, order, payment)
         return ConfirmResult("order_paid", payment, order, user)
 
 
@@ -203,7 +207,7 @@ async def paid_payment_for(session: AsyncSession, order_id: int) -> Payment | No
 
 async def refund_order(session: AsyncSession, order_id: int, method: str, s, now: datetime,  # noqa: ANN001
                        admin_id: int | None, star_refunder: StarRefunder | None = None) -> RefundResult:
-    """Возврат: рубли — на баланс (или звёзды — через refundStarPayment), бонусы — новой партией."""
+    """Возврат: рубли - на баланс (или звёзды - через refundStarPayment), бонусы - новой партией."""
     async with app_lock():
         order = await session.get(Order, order_id, populate_existing=True)
         if order is None or order.status not in REFUNDABLE:
@@ -213,7 +217,7 @@ async def refund_order(session: AsyncSession, order_id: int, method: str, s, now
         if method == "stars":
             if payment is None or payment.provider != "stars" or not payment.telegram_payment_charge_id \
                     or order.paid_invoice <= 0 or star_refunder is None:
-                raise OrderError("Звёздами вернуть нельзя — этот заказ оплачен не звёздами.")
+                raise OrderError("Звёздами вернуть нельзя: этот заказ оплачен не звёздами.")
             if not await star_refunder(payment):
                 raise OrderError("Telegram не подтвердил возврат звёзд.")
             stars_refunded = payment.amount_stars or 0
@@ -294,7 +298,7 @@ async def claim_manual(session: AsyncSession, payment_id: int, user_id: int, fil
 
 async def review_manual(session: AsyncSession, payment_id: int, approved: bool, s, now: datetime,  # noqa: ANN001
                         admin_id: int) -> tuple[Payment, ConfirmResult | None]:
-    """Админ сверил поступление: approved — провести платёж, иначе отклонить. Повторное решение — ошибка."""
+    """Админ сверил поступление: approved - провести платёж, иначе отклонить. Повторное решение - ошибка."""
     payment = await session.get(Payment, payment_id, populate_existing=True)
     if payment is None or payment.provider != "manual":
         raise OrderError("Счёт не найден.")

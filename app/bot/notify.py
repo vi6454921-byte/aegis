@@ -15,6 +15,8 @@ from app.db.models import AdminMessage, OrderFile
 from app.utils.timeutil import now_utc
 
 log = logging.getLogger(__name__)
+MARK_SEP = "\n\n· · ·\n"  # v2.4: отметка «кто что сделал» под уведомлением админам
+OLD_MARK_SEP = "\n\n\u2014\n"  # так отделяли отметку до v2.4 (старые уведомления)
 MarkupFor = Callable[[int], InlineKeyboardMarkup | None]  # уровень админа → кнопки
 
 
@@ -31,7 +33,7 @@ async def safe_send(bot: Bot, chat_id: int, text: str, **kwargs) -> Message | No
 
 
 def staff_targets(config: Config, min_level: int = 1, only: set[int] | None = None) -> list[tuple[int, int]]:
-    """[(id, уровень)] админов с уровнем ≥ min_level; владельцы — первыми."""
+    """[(id, уровень)] админов с уровнем ≥ min_level; владельцы - первыми."""
     staff = config.staff
     ids = sorted(staff, key=lambda uid: (uid not in config.admin_ids, uid))
     return [(uid, staff[uid]) for uid in ids if staff[uid] >= min_level and (only is None or uid in only)]
@@ -39,11 +41,11 @@ def staff_targets(config: Config, min_level: int = 1, only: set[int] | None = No
 
 async def notify_admins(bot: Bot, config: Config, text: str, *, min_level: int = 1,
                         markup_for: MarkupFor | None = None, exclude: int | None = None,
-                        **kwargs) -> list[tuple[int, Message]]:
-    """Шлёт всем админам (уровень ≥ min_level). markup_for(level) — кнопки по уровню доступа.
-    Возвращает [(admin_id, сообщение)] — чтобы запомнить заголовки (ответ свайпом, пометки «взял»)."""
+                        only: set[int] | None = None, **kwargs) -> list[tuple[int, Message]]:
+    """Шлёт всем админам (уровень ≥ min_level; only - только этим). markup_for(level) - кнопки по уровню доступа.
+    Возвращает [(admin_id, сообщение)] - чтобы запомнить заголовки (ответ свайпом, пометки «взял»)."""
     sent: list[tuple[int, Message]] = []
-    for admin_id, level in staff_targets(config, min_level):
+    for admin_id, level in staff_targets(config, min_level, only):
         if admin_id == exclude:
             continue
         kw = dict(kwargs)
@@ -75,22 +77,22 @@ async def lookup(session: AsyncSession, admin_id: int, message_id: int) -> Admin
 
 async def mark_headers(bot: Bot, session: AsyncSession, config: Config, kind: str, ref_id: int, marker: str,
                        markup_for: MarkupFor | None = None) -> int:
-    """Дописывает к уведомлениям у всех админов строку «✅ Ответил(а): Аня» — чтобы не делать работу дважды.
-    markup_for(level) — новые кнопки (None — кнопки убрать)."""
+    """Дописывает к уведомлениям у всех админов строку «✅ Ответил(а): Аня» - чтобы не делать работу дважды.
+    markup_for(level) - новые кнопки (None - кнопки убрать)."""
     rows = (await session.execute(select(AdminMessage).where(AdminMessage.kind == kind, AdminMessage.ref_id == ref_id,
                                                              AdminMessage.is_header.is_(True))
                                   .order_by(AdminMessage.id))).scalars().all()
     done = 0
     for row in rows:
-        base = (row.text or "").split("\n\n—\n")[0]
-        text = f"{base}\n\n—\n{marker}"
+        base = (row.text or "").split(MARK_SEP)[0].split(OLD_MARK_SEP)[0]
+        text = f"{base}{MARK_SEP}{marker}"
         markup = markup_for(config.admin_level(row.admin_id)) if markup_for else None
         try:
             await bot.edit_message_text(text[:4096], chat_id=row.admin_id, message_id=row.message_id,
                                         reply_markup=markup)
             done += 1
         except TelegramBadRequest as e:
-            if "no text" in str(e).lower():  # уведомление с фото/файлом — правим подпись
+            if "no text" in str(e).lower():  # уведомление с фото/файлом - правим подпись
                 try:
                     await bot.edit_message_caption(chat_id=row.admin_id, message_id=row.message_id,
                                                    caption=text[:1024], reply_markup=markup)
@@ -109,7 +111,7 @@ def _input(f: OrderFile):  # noqa: ANN202
 
 
 async def send_files(bot: Bot, chat_id: int, files: list[OrderFile], caption: str | None = None) -> None:
-    """Фото — альбомами по 10, документы — отдельно. Если file_id не сработал — шлём локальную копию."""
+    """Фото - альбомами по 10, документы - отдельно. Если file_id не сработал - шлём локальную копию."""
     photos = [f for f in files if f.file_type == "photo"]
     docs = [f for f in files if f.file_type != "photo"]
     first = True

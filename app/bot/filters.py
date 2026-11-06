@@ -5,7 +5,7 @@ from app.config import Config
 
 
 class IsAdmin(BaseFilter):
-    """Доступ к админке: уровень админа ≥ level (1 — оператор, 2 — старший; владельцы всегда 2)."""
+    """Доступ к админке: уровень админа ≥ level (1 - оператор, 2 - старший; владельцы всегда 2)."""
 
     def __init__(self, level: int = 1) -> None:
         self.level = level
@@ -20,7 +20,7 @@ class IsBanned(BaseFilter):
 
 
 class IsLevel(BaseFilter):
-    """Ровно этот уровень админа — например, отказ «Недостаточно прав» админу 1 уровня на команды 2 уровня."""
+    """Ровно этот уровень админа - например, отказ «Недостаточно прав» админу 1 уровня на команды 2 уровня."""
 
     def __init__(self, level: int) -> None:
         self.level = level

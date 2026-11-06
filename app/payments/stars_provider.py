@@ -8,7 +8,7 @@ from app.payments.base import PaymentProvider
 
 
 class StarsPaymentProvider(PaymentProvider):
-    """Telegram Stars: currency XTR, provider_token пустой, возврат — refundStarPayment."""
+    """Telegram Stars: currency XTR, provider_token пустой, возврат - refundStarPayment."""
 
     name = "stars"
 

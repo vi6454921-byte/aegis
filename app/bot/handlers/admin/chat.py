@@ -1,10 +1,10 @@
 """Админка → «✉️ Ответить»: режим чата с клиентом по заказу (или по обращению без заказа).
 
 Кнопка «✉️ Ответить» в карточке заказа, в карточке обращения и под уведомлением о новом заказе включает режим
-(строка в admin_chats — переживает перезапуск бота). Дальше всё, что админ присылает боту вне других вводов
-админки, уходит клиенту с пометкой «По заказу №…», а под сообщением админа — «✅ Доставлено» или понятная ошибка.
-Режим действует до «✅ Завершить» (или «📦 Готово — отправить клиенту»). Другие кнопки его не ломают: пока идёт
-ввод цены или поиск пользователя, сообщение уходит туда, следующее — снова клиенту. В /admin — «↩️ Вернуться
+(строка в admin_chats - переживает перезапуск бота). Дальше всё, что админ присылает боту вне других вводов
+админки, уходит клиенту с пометкой «По заказу №…», а под сообщением админа - «✅ Доставлено» или понятная ошибка.
+Режим действует до «✅ Завершить» (или «📦 Готово - отправить клиенту»). Другие кнопки его не ломают: пока идёт
+ввод цены или поиск пользователя, сообщение уходит туда, следующее - снова клиенту. В /admin - «↩️ Вернуться
 в чат по заказу №…». Свайп-ответы на уведомления разбирает admin/tickets.py (он подключён раньше)."""
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ async def order_target(session: AsyncSession, order_id: int) -> Target | None:
 
 
 async def ticket_target(session: AsyncSession, ticket_id: int) -> Target | None:
-    """Обращение по заказу — это переписка по заказу (одна ветка); остальные — само обращение."""
+    """Обращение по заказу - это переписка по заказу (одна ветка); остальные - само обращение."""
     ticket = await tickets.get(session, ticket_id) if ticket_id else None
     if ticket is None:
         return None
@@ -110,7 +110,7 @@ async def c_end(call: CallbackQuery, callback_data: AdminCb, session: AsyncSessi
 @router.callback_query(_c("done"))
 async def c_done(call: CallbackQuery, callback_data: AdminCb, state: FSMContext, session: AsyncSession,
                  s: RuntimeSettings, bot: Bot, config: Config) -> None:
-    """«📦 Готово — отправить клиенту» из чата: выдать заказ и завершить чат (карточка — новым сообщением)."""
+    """«📦 Готово - отправить клиенту» из чата: выдать заказ и завершить чат (карточка - новым сообщением)."""
     await orders.finish_order(call, callback_data.id, state, session, s, bot, config, new=True)
 
 
@@ -128,7 +128,7 @@ async def c_back(call: CallbackQuery, state: FSMContext, session: AsyncSession) 
 
 # ------------------------------------------------------------------ сообщения админа → клиенту
 async def in_chat(message: Message, session: AsyncSession) -> dict | bool:
-    """Админ в режиме чата (команды «/…» сюда не относятся — их разбирают свои хендлеры или «не понял»)."""
+    """Админ в режиме чата (команды «/…» сюда не относятся - их разбирают свои хендлеры или «не понял»)."""
     if message.from_user is None or (message.text or "").startswith("/"):
         return False
     chat = await conversation.get_chat(session, message.from_user.id)
@@ -145,7 +145,7 @@ async def c_relay(message: Message, session: AsyncSession, sessionmaker: async_s
 @router.message(StateFilter(AdminSG.ticket_reply, AdminSG.order_message))
 async def c_legacy(message: Message, state: FSMContext, session: AsyncSession, sessionmaker: async_sessionmaker,
                    bot: Bot, config: Config) -> None:
-    """Ввод из 2.2 («Ответ клиенту» / «Сообщение клиенту» ждали сообщение) — включаем режим чата и доставляем."""
+    """Ввод из 2.2 («Ответ клиенту» / «Сообщение клиенту» ждали сообщение) - включаем режим чата и доставляем."""
     data = await state.get_data()
     await state.clear()
     await close_prompt(bot, data)

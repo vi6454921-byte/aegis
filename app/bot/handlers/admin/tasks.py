@@ -1,8 +1,8 @@
 """Админка → 🎯 Задания (1 и 2 уровень): «📌 Ссылка в профиле» и «📣 Пост о нас».
 
 Как у чеков: карточка со скрином приходит всем админам, решение одного помечает карточки у остальных
-(«✅ Начислено: Аня»), повторное нажатие ничего не начисляет. Деньги — обычные рубли через ledger (services.promo).
-Ручная корректировка по посту — только 2 уровень.
+(«✅ Начислено: Аня»), повторное нажатие ничего не начисляет. Деньги - обычные рубли через ledger (services.promo).
+Ручная корректировка по посту - только 2 уровень.
 """
 from __future__ import annotations
 
@@ -70,10 +70,10 @@ def _client_btn(user_id: int):  # noqa: ANN202
 def claim_header(claim: ProfileClaim, user: User | None, s: RuntimeSettings) -> str:
     reward = claim.reward if claim.status in ("approved", "revoked") else int(s.profile_task_reward)
     text = texts.ADMIN_PROFILE_CLAIM.format(
-        id=claim.id, user=display_name(user), reward=fmt_rub(reward), link=html.escape(claim.link or "—"),
+        id=claim.id, user=display_name(user), reward=fmt_rub(reward), link=html.escape(claim.link or "-"),
         bio=texts.BIO_CHECK.get(claim.bio_check or "unknown", texts.BIO_CHECK["unknown"]))
     text += f"\nСкрин: {'прислан ⬆️' if claim.file_id else 'нет'} · {fmt_dt(claim.created_at)}"
-    return text + "\n<i>Проверь на скрине ссылку на бота в «О себе». Автопроверка — подсказка, решаешь ты.</i>"
+    return text + "\n<i>Проверь на скрине ссылку на бота в «О себе». Автопроверка: подсказка, решаешь ты.</i>"
 
 
 def report_header(report: PromoPostReport, post: PromoPost, user: User | None, s: RuntimeSettings) -> str:
@@ -90,7 +90,7 @@ def report_header(report: PromoPostReport, post: PromoPost, user: User | None, s
             id=post.id, platform=platform, user=display_name(user), url=url, claimed=claimed,
             prev=post.verified_views, credited=fmt_rub(post.credited), views_paid=fmt_rub(post.views_reward_paid),
             pay=fmt_rub(pay))
-        hint = "<i>Сверь счётчик просмотров на скрине. Подтвердить можно своё число — не меньше прошлого.</i>"
+        hint = "<i>Сверь счётчик просмотров на скрине. Подтвердить можно своё число: не меньше прошлого.</i>"
     text += f"\nСкрин: {'прислан ⬆️' if report.file_id else 'нет'} · {fmt_dt(report.created_at)}"
     return f"{text}\n{hint}"
 
@@ -126,14 +126,14 @@ async def _send_shot(bot: Bot, chat_id: int, file_id: str | None, file_type: str
             return await bot.send_photo(chat_id, file_id, caption=caption[:1024], reply_markup=kb)
         if file_id and file_type == "document":
             return await bot.send_document(chat_id, file_id, caption=caption[:1024], reply_markup=kb)
-    except Exception:  # noqa: BLE001 — скрин не ушёл: карточка всё равно нужна
+    except Exception:  # noqa: BLE001 - скрин не ушёл: карточка всё равно нужна
         log.warning("скрин задания не отправился админу %s", chat_id)
     return await safe_send(bot, chat_id, caption, reply_markup=kb)
 
 
 async def notify_claim(bot: Bot, session: AsyncSession, config: Config, claim: ProfileClaim, user: User,
                        s: RuntimeSettings) -> None:
-    """Заявка «Ссылка в профиле» — всем админам 1 и 2 уровня: скрин с подписью и кнопками. Без commit."""
+    """Заявка «Ссылка в профиле» - всем админам 1 и 2 уровня: скрин с подписью и кнопками. Без commit."""
     header = claim_header(claim, user, s)
     for admin_id, _lvl in staff_targets(config, 1):
         msg = await _send_shot(bot, admin_id, claim.file_id, claim.file_type, header, claim_kb(claim))
@@ -143,7 +143,7 @@ async def notify_claim(bot: Bot, session: AsyncSession, config: Config, claim: P
 
 async def notify_report(bot: Bot, session: AsyncSession, config: Config, report: PromoPostReport, post: PromoPost,
                         user: User, s: RuntimeSettings) -> None:
-    """Пост или отчёт о просмотрах — всем админам 1 и 2 уровня. Без commit."""
+    """Пост или отчёт о просмотрах - всем админам 1 и 2 уровня. Без commit."""
     header = report_header(report, post, user, s)
     for admin_id, _lvl in staff_targets(config, 1):
         msg = await _send_shot(bot, admin_id, report.file_id, report.file_type, header, report_kb(report, post))
@@ -240,7 +240,7 @@ async def post_view(session: AsyncSession, post_id: int, level: int,
         lines.append(f"• №{r.id} · {fmt_dt(r.created_at)} · {what} · {texts.REPORT_STATUS.get(r.status, r.status)}"
                      + (f" · +{fmt_rub(r.credited)}" if r.credited else ""))
         if r.status == "pending":
-            rows.append([cb(f"⏳ Отчёт №{r.id} — проверить", T("rp", r.id))])
+            rows.append([cb(f"⏳ Отчёт №{r.id}: проверить", T("rp", r.id))])
     actions = []
     if post.status in promo.POST_ACTIVE:
         actions.append(cb(texts.TASK_DELETED_BTN, T("del", post.id)))
@@ -334,7 +334,7 @@ async def _after(call: CallbackQuery, view: tuple[str, InlineKeyboardMarkup] | N
 
 
 def _self_check(config: Config, actor_id: int, user_id: int) -> bool:
-    """Свою заявку проверяет кто-то другой (владельцу можно — он и так распоряжается деньгами)."""
+    """Свою заявку проверяет кто-то другой (владельцу можно - он и так распоряжается деньгами)."""
     return actor_id != user_id or actor_id in config.admin_ids
 
 
@@ -387,7 +387,7 @@ async def t_post_ok(call: CallbackQuery, callback_data: AdminCb, session: AsyncS
 
 async def approve_views(bot: Bot, session: AsyncSession, config: Config, s: RuntimeSettings, report_id: int,
                         views: int, admin_id: int) -> tuple[str, promo.ViewsResult]:
-    """Подтвердить просмотры (нарастающим итогом). PromoError — наверх. → (пометка, итог)."""
+    """Подтвердить просмотры (нарастающим итогом). PromoError - наверх. → (пометка, итог)."""
     res = await promo.approve_views(session, report_id, views, admin_id, s, now_utc())
     post, total = res.post, fmt_rub(res.total)
     if res.pay > 0:
@@ -431,7 +431,7 @@ async def t_views_ok(call: CallbackQuery, callback_data: AdminCb, session: Async
 async def t_views_num(call: CallbackQuery, callback_data: AdminCb, state: FSMContext, session: AsyncSession) -> None:
     report = await session.get(PromoPostReport, callback_data.id, populate_existing=True)
     if report is None or report.kind != "views" or report.status != "pending":
-        await call.answer(texts.TASK_ALREADY.format(status=texts.REPORT_STATUS.get(report.status, "—"))
+        await call.answer(texts.TASK_ALREADY.format(status=texts.REPORT_STATUS.get(report.status, "-"))
                           if report is not None else texts.TASK_NOT_FOUND, show_alert=True)
         return
     post = await session.get(PromoPost, report.post_id)
@@ -593,7 +593,7 @@ async def t_reject_reason(message: Message, state: FSMContext, session: AsyncSes
 async def t_delete_ask(call: CallbackQuery, callback_data: AdminCb, session: AsyncSession) -> None:
     post = await session.get(PromoPost, callback_data.id, populate_existing=True)
     if post is None or post.status not in promo.POST_ACTIVE:
-        await call.answer(texts.POST_NOTHING_TO_DELETE.format(status=texts.POST_STATUS.get(post.status, "—"))
+        await call.answer(texts.POST_NOTHING_TO_DELETE.format(status=texts.POST_STATUS.get(post.status, "-"))
                           if post else texts.TASK_NOT_FOUND, show_alert=True)
         return
     await call.answer()
@@ -649,7 +649,7 @@ async def t_adjust_amount(message: Message, state: FSMContext, session: AsyncSes
         await message.answer(texts.TASK_OVERFLOW)
         return
     await close_prompt(bot, data)
-    await state.set_state(None)  # дальше — кнопка подтверждения; данные операции (с кодом op) — в FSM
+    await state.set_state(None)  # дальше - кнопка подтверждения; данные операции (с кодом op) - в FSM
     await state.update_data(adj={"pid": post.id, "amount": amount, "comment": comment[:300], "op": data.get("op")},
                             prompt_chat=None, prompt_mid=None)
     shown = f"{'+' if amount > 0 else '−'}{fmt_rub(abs(amount))}"

@@ -1,8 +1,8 @@
 """Оформление заказа по шагам: «📝 Заказать» (разбор задач) и «📸 Объяснить материал».
 
-Черновик — строка orders (status=draft) с полем wizard_step, состояние диалога — FSM в БД.
-После рестарта бота пользователь продолжает с того же шага. Над каждым шагом — прогресс «Шаг 2 из 5 ▰▰▱▱▱»,
-на кнопках срока — наценка, которая получится (из настроек админки).
+Черновик - строка orders (status=draft) с полем wizard_step, состояние диалога - FSM в БД.
+После рестарта бота пользователь продолжает с того же шага. Над каждым шагом - прогресс «Шаг 2 из 5 ▰▰▱▱▱»,
+на кнопках срока - наценка, которая получится (из настроек админки).
 """
 from __future__ import annotations
 
@@ -19,13 +19,13 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app import actionlog as actions
 from app import texts
-from app.bot import drafts
+from app.bot import drafts, guide
 from app.bot import files as upl
-from app.bot import guide
-from app.bot.callbacks import MenuCb, WizCb
+from app.bot.callbacks import DesignCb, MenuCb, WizCb
 from app.bot.handlers.common import menu_router
-from app.bot.keyboards import cb, ik, main_menu, order_alert_kb
+from app.bot.keyboards import any_alert_kb, cb, ik, main_menu, order_alert_kb
 from app.bot.notify import notify_admins, remember_all, send_files, staff_targets
 from app.bot.render import subject_name, tasks_word
 from app.bot.states import OrderSG
@@ -49,12 +49,13 @@ STATES: dict[str, State] = {
     "subject": OrderSG.subject, "photos": OrderSG.photos, "count": OrderSG.count, "variant": OrderSG.variant,
     "deadline": OrderSG.deadline, "deadline_pick": OrderSG.deadline_pick, "lecture": OrderSG.lecture,
     "practice": OrderSG.practice, "comment": OrderSG.comment, "summary": OrderSG.summary, "terms": OrderSG.terms,
+    "any": OrderSG.any_task,
 }
 STEP_OF = {st.state: name for name, st in STATES.items()}
 SUB_STEPS = {"deadline_pick": "deadline", "terms": "summary"}
 FILE_KIND = {"photos": "condition", "lecture": "lecture", "practice": "practice"}
 FILE_STATES = StateFilter(OrderSG.photos, OrderSG.lecture, OrderSG.practice)
-# шаги без файлов: присланное здесь фото не теряем — кладём в условие (v2.3)
+# шаги без файлов: присланное здесь фото не теряем - кладём в условие (v2.3)
 OTHER_STATES = StateFilter(OrderSG.subject, OrderSG.count, OrderSG.variant, OrderSG.deadline, OrderSG.deadline_pick,
                            OrderSG.comment, OrderSG.summary, OrderSG.terms)
 MAX_VARIANT = 64
@@ -62,19 +63,25 @@ MAX_COMMENT = 1000
 DEADLINE_MIN = timedelta(hours=1)
 DEADLINE_MAX = timedelta(days=90)
 PICK_DAYS = range(3, 10)
-DRAFT_LOST = "Черновик не нашли — начни заново: «📝 Заказать»."
+DRAFT_LOST = "Черновик не нашли. Начни заново: «📝 Заказать»."
 
-_dropped: set[int] = set()  # кто прислал больше MAX_FILES файлов — скажем об этом в подтверждении
+_dropped: set[int] = set()  # кто прислал больше MAX_FILES файлов - скажем об этом в подтверждении
 
 
 def is_explain(order: Order | None) -> bool:
     return svc.is_explain(order)
 
 
+def is_any(order: Order | None) -> bool:
+    return svc.is_any(order)
+
+
 # ------------------------------------------------------------------ шаги
 def steps_for(order: Order | None, s: RuntimeSettings) -> list[str]:
     if is_explain(order):
         return ["photos", "comment", "deadline", "summary"]
+    if is_any(order):  # v2.4: условие одним шагом, цену назовёт админ
+        return ["any"]
     seq = ["subject", "photos", "count", "variant", "deadline"]
     if order is not None and order.subject and s.notes_discount_for(order.subject):
         seq += ["lecture", "practice"]
@@ -89,6 +96,10 @@ def next_step(step: str, order: Order, s: RuntimeSettings) -> str:
 
 
 def prev_step(step: str, order: Order | None, s: RuntimeSettings) -> str:
+    if step == "any":
+        return "subject"
+    if step == "terms" and is_any(order):
+        return "any"
     if step in SUB_STEPS:
         return SUB_STEPS[step]
     seq = steps_for(order, s)
@@ -98,7 +109,9 @@ def prev_step(step: str, order: Order | None, s: RuntimeSettings) -> str:
 
 
 def progress(step: str, order: Order | None, s: RuntimeSettings) -> str:
-    """«Шаг 2 из 5 ▰▰▱▱▱» — выбор предмета и итог шагами не считаем."""
+    """«Шаг 2 из 5 ▰▰▱▱▱»: выбор предмета и итог шагами не считаем, у «Любой задачи» шагов нет."""
+    if is_any(order):
+        return ""
     seq = [x for x in steps_for(order, s) if x not in ("subject", "summary")]
     base = SUB_STEPS.get(step, step)
     if base not in seq:
@@ -109,12 +122,14 @@ def progress(step: str, order: Order | None, s: RuntimeSettings) -> str:
 
 async def sane_step(session: AsyncSession, order: Order, step: str, s: RuntimeSettings) -> str:
     """Не пускаем дальше первого незаполненного шага (например, после смены настроек)."""
+    if not order.subject:  # фото прислали раньше, чем выбрали предмет
+        return "subject"
+    if is_any(order):
+        return "terms" if step == "terms" else "any"
     seq = steps_for(order, s)
     base = SUB_STEPS.get(step, step)
     if base not in seq:
         step = base = "photos"
-    if not order.subject:  # фото прислали раньше, чем выбрали предмет
-        return "subject"
     need = None
     if await svc.count_files(session, order.id, "condition") == 0:
         need = "photos"
@@ -157,6 +172,24 @@ def files_kb(step: str, n: int, back: bool = True) -> InlineKeyboardMarkup:
     return ik(*rows)
 
 
+def any_kb(has_content: bool) -> InlineKeyboardMarkup:
+    """«📎 Любая задача»: «✅ Готово», «🗑 Очистить» (если что-то прислали), «Назад» к выбору и «Отмена»."""
+    return ik([cb(texts.ANY_DONE_BTN, WizCb(action="any_done"))],
+              [cb(texts.BTN_CLEAR, WizCb(action="any_clear"))] if has_content else None,
+              nav())
+
+
+async def any_sent(session: AsyncSession, order: Order) -> str:
+    """«файлов: 2, текст условия» или пусто."""
+    parts = []
+    n = await svc.count_files(session, order.id, "condition")
+    if n:
+        parts.append(f"файлов: {n}")
+    if (order.comment or "").strip():
+        parts.append(texts.ANY_WHAT_TEXT)
+    return ", ".join(parts)
+
+
 def remind_kb() -> InlineKeyboardMarkup:
     return ik([cb(texts.REMIND_BTN, MenuCb(action="remind"))])
 
@@ -169,26 +202,29 @@ def _now_value(value: str) -> str:
     return f"\n\n<i>Сейчас: {value}</i>"
 
 
-def deadline_buttons(s: RuntimeSettings, now: datetime) -> list:
-    """«Сегодня · ×2,0», «Завтра · ×1,5», «Через 2 дня · без наценки», «Через 3+ дня · без наценки»."""
+def deadline_buttons(s: RuntimeSettings, now: datetime, subject: str | None = None) -> list:
+    """«Сегодня», «Завтра», «Через 2 дня», «Через 3+ дня». Если у предмета есть наценка за срочность
+    (v2.4: только у объяснения), на кнопках видно, какая: «Завтра · ×1,5»."""
     today = local_today(now)
+    urgency = s.urgency_for(subject)
     btns = []
     for code, label in texts.DEADLINE_BTNS.items():
         days = {"d0": 0, "d1": 1, "d2": 2, "d3": 3}[code]
         dt = end_of_local_day(today + timedelta(days=days))
         if dt < now + DEADLINE_MIN:
             continue  # поздно вечером «Сегодня» уже не успеть
-        btns.append(cb(f"{label} · {guide.deadline_hint(s, hours_between(now, dt))}", WizCb(action="dl", value=code)))
+        text = f"{label} · {guide.deadline_hint(s, hours_between(now, dt))}" if urgency else label
+        btns.append(cb(text, WizCb(action="dl", value=code)))
     return btns
 
 
-def price_line(order: Order, ppt: int, urgency_pct: int, total: int) -> str:
-    """«💵 200 ₽ × 1 задача = 200 ₽ · срок без наценки» / «… × срочность ×1,5 = 300 ₽»."""
+def price_line(order: Order, ppt: int, urgency_pct: int, total: int, urgency_on: bool = False) -> str:
+    """«💵 200 ₽ × 1 задача = <b>200 ₽</b>»; с наценкой: «… × срочность ×1,5 = <b>300 ₽</b>»."""
     parts = [fmt_rub(ppt)] if is_explain(order) else [fmt_rub(ppt), tasks_word(order.task_count or 1)]
     if urgency_pct != 100:
         parts.append(f"срочность {fmt_mult(urgency_pct)}")
     line = f"💵 {' × '.join(parts)} = <b>{fmt_rub(total)}</b>" if len(parts) > 1 else f"💵 <b>{fmt_rub(total)}</b>"
-    return line + (f" · срок {texts.NO_MARKUP}" if urgency_pct == 100 else "")
+    return line + (f", срок {texts.NO_MARKUP}" if urgency_on and urgency_pct == 100 else "")
 
 
 async def _payment_lines(session: AsyncSession, user: User, s: RuntimeSettings, now: datetime) -> list[str]:
@@ -196,7 +232,7 @@ async def _payment_lines(session: AsyncSession, user: User, s: RuntimeSettings, 
     bonus = await available_bonus(session, user.id, now)
     if bonus or user.balance_rub:
         lines.append(f"💰 Оплата: сначала бонусы (до {s.bonus_max_share_pct}% цены, у тебя {fmt_rub(bonus)}), "
-                     f"потом баланс ({fmt_rub(user.balance_rub)}), остаток — счётом")
+                     f"потом баланс ({fmt_rub(user.balance_rub)}), остаток счётом")
     intake = await slots.intake_state(session, s, now, unlimited=user.unlimited_active(now))
     if intake.show_remaining and intake.remaining is not None:
         lines.append(texts.SLOTS_LEFT.format(n=intake.remaining))
@@ -211,14 +247,14 @@ async def summary_text(session: AsyncSession, order: Order, s: RuntimeSettings, 
         lines = [
             texts.EXPLAIN_SUMMARY_TITLE,
             f"Фото материала: {counts['condition']}",
-            f"Вопрос: <i>{html.escape(order.comment or '—')}</i>",
+            f"Вопрос: <i>{html.escape(order.comment or '-')}</i>",
             f"Дедлайн: {fmt_dt(order.deadline_at, with_weekday=True)} ({fmt_left(order.deadline_at, now)})",
             "",
         ]
         if user.unlimited_active(now):
             lines.append(texts.UNLIMITED_SUMMARY)
         else:
-            lines += [price_line(order, dp.price_per_task, dp.urgency_pct, dp.base),
+            lines += [price_line(order, dp.price_per_task, dp.urgency_pct, dp.base, s.urgency_for(order.subject)),
                       *await _payment_lines(session, user, s, now), "\nСчёт пришлём после проверки материала."]
         return "\n".join(lines)
     notes_on = s.notes_discount_for(order.subject)
@@ -233,31 +269,30 @@ async def summary_text(session: AsyncSession, order: Order, s: RuntimeSettings, 
     if notes_on:
         lec = f"{counts['lecture']} фото" if counts["lecture"] else "нет"
         pr = f"{counts['practice']} фото" if counts["practice"] else "нет"
-        lines.append(f"Конспекты: лекция — {lec}, практика — {pr}")
+        lines.append(f"Конспекты. Лекция: {lec}, практика: {pr}")
     if order.comment:
         lines.append(f"Комментарий: <i>{html.escape(order.comment)}</i>")
     lines.append("")
     if user.unlimited_active(now):
         lines.append(texts.UNLIMITED_SUMMARY)
         return "\n".join(lines)
-    lines.append(price_line(order, dp.price_per_task, dp.urgency_pct, dp.base))
+    lines.append(price_line(order, dp.price_per_task, dp.urgency_pct, dp.base, s.urgency_for(order.subject)))
     if dp.potential_discount:
         lines.append(f"📚 Если конспекты пройдут проверку: −{dp.potential_discount}% → <b>{fmt_rub(dp.with_notes)}</b>")
     if free_month_active(user, now):
-        lines.append(f"🎁 «Месяц бесплатно»: осталось задач — {user.free_month_tasks_left}, учтём в счёте")
+        lines.append(f"🎁 «Месяц бесплатно»: осталось задач {user.free_month_tasks_left}, учтём в счёте")
     lines += await _payment_lines(session, user, s, now)
     lines.append("\n" + texts.SUMMARY_INVOICE_NOTE)
     return "\n".join(lines)
 
 
 def subject_text(s: RuntimeSettings) -> str:
-    lines = [texts.STEP_SUBJECT]
-    for code in texts.ORDER_SUBJECTS:
-        line = f"{texts.SUBJECT_ICONS.get(code, '')} {texts.SUBJECTS[code]} — {fmt_rub(s.price_for(code))} за задачу"
-        if s.notes_discount_for(code):
-            line += f" (до −{int(s.discount_lecture_pct) + int(s.discount_practice_pct)}% за фото конспектов)"
-        lines.append(line)
-    lines.append(f"<i>{guide.urgency_lines(s)[0]}</i>")
+    """«📝 Новый заказ»: цены по предметам и «📎 Любая задача». v2.4: срок на цену не влияет."""
+    lines = [texts.STEP_SUBJECT, "", *guide.subject_price_lines(s), guide.design_price_line(), texts.ANY_TASK_LINE]
+    if any(s.urgency_for(code) for code in texts.ORDER_SUBJECTS):
+        lines += ["", f"<i>{guide.urgency_lines(s)[0]}</i>"]
+    else:
+        lines += ["", f"<i>{texts.NO_URGENCY_NOTE}</i>"]
     return "\n".join(lines)
 
 
@@ -276,17 +311,26 @@ async def render(step: str, session: AsyncSession, order: Order | None, s: Runti
                 text += texts.DRAFT_SUBJECT_PHOTOS.format(n=n)
         rows = [[cb(("• " if order is not None and order.subject == code else "") + subject_name(code),
                     WizCb(action="subject", value=code))] for code in texts.ORDER_SUBJECTS]
-        rows.append([cb(f"{M['explain']} — не понял тему", WizCb(action="to_explain"))])
+        rows.append([cb(texts.EXPLAIN_FROM_SUBJECT_BTN, WizCb(action="to_explain"))])
+        rows.append([cb(texts.DESIGN_FROM_ORDER_BTN, DesignCb(a="open", v="order"))])  # v2.4: «🎨 Файлы и дизайн»
+        rows.append([cb(texts.ANY_TASK_BTN, WizCb(action="to_any"))])  # v2.4: над «Отмена»
         rows.append(nav(back=False))
         return text, ik(*rows)
     assert order is not None
     explain = is_explain(order)
+    if step == "any":
+        text = texts.ANY_STEP
+        sent = await any_sent(session, order)
+        if sent:
+            text += texts.ANY_SENT.format(what=sent)
+        return text, any_kb(bool(sent))
     if step in FILE_KIND:
         n = await svc.count_files(session, order.id, FILE_KIND[step])
         if step == "photos" and explain:
-            text = (f"{texts.EXPLAIN_TITLE}\n{head}{texts.EXPLAIN_INTRO}\n"
-                    f"Стоимость — {fmt_rub(s.price_for(svc.EXPLAIN))}, срочность — по сроку.\n\n"
-                    f"{texts.STEP_EXPLAIN_PHOTOS}")
+            cost = texts.EXPLAIN_COST.format(price=fmt_rub(s.price_for(svc.EXPLAIN)))
+            if s.urgency_for(svc.EXPLAIN):
+                cost += texts.EXPLAIN_COST_URGENCY
+            text = f"{texts.EXPLAIN_TITLE}\n\n{head}{texts.EXPLAIN_INTRO}\n\n{cost}\n\n{texts.STEP_EXPLAIN_PHOTOS}"
         elif step == "photos":
             text = head + texts.STEP_PHOTOS + "\n" + texts.STEP_PHOTOS_TIP
         elif step == "lecture":
@@ -304,17 +348,22 @@ async def render(step: str, session: AsyncSession, order: Order | None, s: Runti
         text = head + texts.STEP_VARIANT + (_now_value(html.escape(order.variant)) if order.variant else "")
         return text, ik([cb(texts.BTN_NO_VARIANT, WizCb(action="variant_none"))], nav())
     if step == "deadline":
-        text = head + texts.STEP_DEADLINE + "\n\n<b>Наценка за срочность</b>\n" + "\n".join(guide.urgency_lines(s))
+        text = head + texts.STEP_DEADLINE
+        if s.urgency_for(order.subject):
+            text += "\n\n<b>Наценка за срочность</b>\n" + "\n".join(guide.urgency_lines(s))
+        else:
+            text += "\n\n<i>" + texts.DEADLINE_INFO_ONLY + "</i>"
         if order.deadline_at:
             text += _now_value(fmt_dt(order.deadline_at, with_weekday=True))
-        btns = deadline_buttons(s, now)
+        btns = deadline_buttons(s, now, order.subject)
         return text, ik(btns[:2], btns[2:], nav())
     if step == "deadline_pick":
         today = local_today(now)
+        urgency = s.urgency_for(order.subject)
         btns = []
         for k in PICK_DAYS:
             d = today + timedelta(days=k)
-            hint = guide.deadline_hint(s, hours_between(now, end_of_local_day(d)))
+            hint = guide.deadline_hint(s, hours_between(now, end_of_local_day(d))) if urgency else texts.NO_MARKUP
             label = f"{WEEKDAYS[d.weekday()]} {d:%d.%m}" + ("" if hint == texts.NO_MARKUP else f" · {hint}")
             btns.append(cb(label, WizCb(action="date", value=d.isoformat())))
         return head + texts.STEP_DEADLINE_PICK, ik(btns[:4], btns[4:], nav())
@@ -363,7 +412,7 @@ async def lost(message: Message, state: FSMContext) -> None:
 # ------------------------------------------------------------------ вход
 async def start_wizard(message: Message, state: FSMContext, session: AsyncSession, user: User,
                        s: RuntimeSettings, config: Config, kind: str = "order") -> None:
-    """kind: order — разбор задач, explain — объяснение материала."""
+    """kind: order - разбор задач, explain - объяснение материала."""
     await state.clear()
     drafts.mark_shown()
     now = now_utc()
@@ -372,12 +421,12 @@ async def start_wizard(message: Message, state: FSMContext, session: AsyncSessio
         await message.answer(closed_text(intake), reply_markup=remind_kb())
         return
     info = await drafts.draft_info(session, user.id)
-    if info is not None:  # черновик с фото — не теряем: продолжить, удалить или начать заново
+    if info is not None:  # черновик с фото - не теряем: продолжить, удалить или начать заново
         text, kb = drafts.screen(info, restart_kind=kind)
         await message.answer(text, reply_markup=kb)
         return
     empty = await svc.get_draft(session, user.id)
-    if empty is not None:  # пустой черновик (только выбран предмет) — начинаем с чистого листа
+    if empty is not None:  # пустой черновик (только выбран предмет) - начинаем с чистого листа
         await svc.delete_draft(session, empty, config.uploads_dir)
     await begin(kind, message, state, session, user, s)
 
@@ -415,7 +464,7 @@ async def cb_start(call: CallbackQuery, callback_data: MenuCb, state: FSMContext
 
 @menu_router.message(Command("cancel"))
 async def cmd_cancel(message: Message, state: FSMContext, session: AsyncSession, db_user: User) -> None:
-    """/cancel — выйти из любого ввода. Черновик заказа при этом не удаляем (v2.3)."""
+    """/cancel - выйти из любого ввода. Черновик заказа при этом не удаляем (v2.3)."""
     raw = await state.get_state()
     await state.clear()
     drafts.mark_shown()
@@ -428,7 +477,7 @@ async def cmd_cancel(message: Message, state: FSMContext, session: AsyncSession,
 
 @menu_router.message(F.text.startswith(texts.DRAFT_MENU_PREFIX))
 async def menu_draft_btn(message: Message, state: FSMContext, session: AsyncSession, db_user: User) -> None:
-    """Кнопка нижнего меню «📝 Продолжить оформление заказа (фото: N)» — экран черновика."""
+    """Кнопка нижнего меню «📝 Продолжить оформление заказа (фото: N)» - экран черновика."""
     await state.clear()
     drafts.mark_shown()
     info = await drafts.refresh_menu(session, db_user.id)
@@ -462,7 +511,7 @@ async def wiz_resume(call: CallbackQuery, state: FSMContext, session: AsyncSessi
 
 @router.callback_query(WizCb.filter(F.action == "draft_del"))
 async def wiz_draft_delete_ask(call: CallbackQuery, session: AsyncSession, db_user: User) -> None:
-    """«🗑 Удалить черновик» — только с подтверждением."""
+    """«🗑 Удалить черновик» - только с подтверждением."""
     drafts.mark_shown()
     info = await drafts.draft_info(session, db_user.id)
     if info is None:
@@ -506,7 +555,7 @@ async def wiz_draft_keep(call: CallbackQuery, session: AsyncSession, db_user: Us
 
 @router.callback_query(WizCb.filter(F.action == "restart_ask"))
 async def wiz_restart_ask(call: CallbackQuery, callback_data: WizCb, session: AsyncSession, db_user: User) -> None:
-    """«🆕 Начать заново» на экране черновика — тоже с подтверждением: черновик удалится."""
+    """«🆕 Начать заново» на экране черновика - тоже с подтверждением: черновик удалится."""
     drafts.mark_shown()
     info = await drafts.draft_info(session, db_user.id)
     kind = "explain" if callback_data.value == "explain" else "order"
@@ -538,7 +587,7 @@ async def wiz_restart(call: CallbackQuery, callback_data: WizCb, state: FSMConte
 @router.callback_query(WizCb.filter(F.action == "cancel"))
 async def wiz_cancel(call: CallbackQuery, state: FSMContext, session: AsyncSession, db_user: User,
                      config: Config) -> None:
-    """«✖️ Отмена» в оформлении: выходим, но черновик с фото сохраняем (v2.3). Пустой — удаляем."""
+    """«✖️ Отмена» в оформлении: выходим, но черновик с фото сохраняем (v2.3). Пустой - удаляем."""
     raw = await state.get_state()
     await call.answer()
     await drop_kb(call)
@@ -572,13 +621,13 @@ async def wiz_back(call: CallbackQuery, state: FSMContext, session: AsyncSession
     await goto(prev_step(step, order, s), call.message, state, session, order, s, db_user)
 
 
-# ------------------------------------------------------------------ фото и текст «не на том шаге» — не теряем (v2.3)
+# ------------------------------------------------------------------ фото и текст «не на том шаге» - не теряем (v2.3)
 @router.message(OTHER_STATES, F.photo | F.document)
 async def wiz_file_elsewhere(message: Message, state: FSMContext, session: AsyncSession, bot: Bot,
                              config: Config, sessionmaker: async_sessionmaker, db_user: User,
                              s: RuntimeSettings) -> None:
     """Фото или файл на шаге без файлов (предмет, количество, срок, комментарий, итог): кладём в условие
-    заказа и показываем тот же шаг ещё раз. Альбом — одним подтверждением."""
+    заказа и показываем тот же шаг ещё раз. Альбом - одним подтверждением."""
     raw = await state.get_state()
     step = STEP_OF[raw]
     f = upl.user_file(message)
@@ -597,7 +646,7 @@ async def wiz_file_elsewhere(message: Message, state: FSMContext, session: Async
         _dropped.add(db_user.id)
     caption = (message.caption or "").strip()
     if step == "comment" and caption and len(caption) <= MAX_COMMENT and not message.media_group_id:
-        order.comment = caption  # подпись к фото на шаге комментария — это и есть комментарий/вопрос
+        order.comment = caption  # подпись к фото на шаге комментария - это и есть комментарий/вопрос
         await session.commit()
         n = await svc.count_files(session, order.id, "condition")
         await goto(next_step("comment", order, s), message, state, session, order, s, db_user,
@@ -627,7 +676,7 @@ async def wiz_file_elsewhere(message: Message, state: FSMContext, session: Async
 
 
 def subject_from_text(text: str) -> str | None:
-    """«начерталка», «📐 Начертательная геометрия» → код предмета (если текст — это название предмета)."""
+    """«начерталка», «📐 Начертательная геометрия» → код предмета (если текст - это название предмета)."""
     t = text.strip().lower().lstrip("•").strip()
     for code in texts.ORDER_SUBJECTS:
         names = {texts.SUBJECTS[code].lower(), subject_name(code).lower(), code}
@@ -640,7 +689,7 @@ def subject_from_text(text: str) -> str | None:
 @router.message(OrderSG.subject, F.text)
 async def wiz_subject_text(message: Message, state: FSMContext, session: AsyncSession, db_user: User,
                            s: RuntimeSettings) -> None:
-    """Текст на шаге выбора предмета: название предмета — выбираем его, иначе сохраняем в комментарий."""
+    """Текст на шаге выбора предмета: название предмета - выбираем его, иначе сохраняем в комментарий."""
     t = (message.text or "").strip()
     code = subject_from_text(t)
     if code is not None:
@@ -697,6 +746,8 @@ async def choose_subject(message: Message, state: FSMContext, session: AsyncSess
             if not s.notes_discount_for(code):
                 for kind in ("lecture", "practice"):
                     await svc.clear_files(session, order.id, kind)
+            if order.subject == svc.ANY:  # из «Любой задачи»: количество задач спросим заново
+                order.task_count = None
             order.subject = code
             await session.commit()
     await goto("photos", message, state, session, order, s, user)
@@ -705,7 +756,7 @@ async def choose_subject(message: Message, state: FSMContext, session: AsyncSess
 @router.callback_query(OrderSG.subject, WizCb.filter(F.action == "to_explain"))
 async def wiz_to_explain(call: CallbackQuery, state: FSMContext, session: AsyncSession, db_user: User,
                          s: RuntimeSettings) -> None:
-    """С выбора предмета — в «Объяснить материал» (черновик, если есть, превращается в заявку)."""
+    """С выбора предмета - в «Объяснить материал» (черновик, если есть, превращается в заявку)."""
     await call.answer()
     await drop_kb(call)
     async with upl.user_lock(db_user.id):
@@ -721,10 +772,140 @@ async def wiz_to_explain(call: CallbackQuery, state: FSMContext, session: AsyncS
     await goto("photos", call.message, state, session, order, s, db_user)
 
 
+# ------------------------------------------------------------------ v2.4: «📎 Скинуть любую задачу»
+@router.callback_query(OrderSG.subject, WizCb.filter(F.action == "to_any"))
+async def wiz_to_any(call: CallbackQuery, state: FSMContext, session: AsyncSession, db_user: User,
+                     s: RuntimeSettings) -> None:
+    """С выбора предмета: условие любой задачи (фото, файл, текст), цену назовёт админ."""
+    await call.answer()
+    await drop_kb(call)
+    async with upl.user_lock(db_user.id):
+        order = await current_draft(session, state, db_user.id)
+        if order is None:
+            order = await svc.create_draft(session, db_user.id, svc.ANY, now_utc())
+        else:
+            for kind in ("lecture", "practice"):
+                await svc.clear_files(session, order.id, kind)
+            order.subject, order.variant = svc.ANY, None
+        order.task_count = 1
+        await session.commit()
+    await goto("any", call.message, state, session, order, s, db_user)
+
+
+@router.message(OrderSG.any_task, F.photo | F.document)
+async def wiz_any_file(message: Message, state: FSMContext, session: AsyncSession, bot: Bot, config: Config,
+                       sessionmaker: async_sessionmaker, db_user: User) -> None:
+    """Фото или файл любого типа: в условие. Подпись к фото тоже сохраняем (как текст условия).
+    Альбом: одно подтверждение после последнего фото."""
+    order = await current_draft(session, state, db_user.id)
+    if order is None:
+        await lost(message, state)
+        return
+    f = upl.any_file(message)
+    if f is None:
+        await message.answer(texts.STEP_FILE_BIG)
+        return
+    if not await save_file(bot, config, session, order.id, "condition", f, db_user.id):
+        _dropped.add(db_user.id)
+    caption = (message.caption or "").strip()
+    if caption:
+        async with upl.user_lock(db_user.id):
+            fresh = await svc.get_order(session, order.id)
+            if fresh is not None and fresh.status == "draft":
+                joined = f"{fresh.comment}\n{caption}" if fresh.comment else caption
+                fresh.comment = joined[:svc.MAX_ANY_TEXT]
+                await session.commit()
+    raw, chat_id, order_id, user_id = await state.get_state(), message.chat.id, order.id, db_user.id
+
+    async def ack() -> None:
+        if await state.get_state() != raw:
+            return
+        async with sessionmaker() as s2:
+            fresh = await svc.get_order(s2, order_id)
+            if fresh is None or fresh.status != "draft":
+                return
+            sent = await any_sent(s2, fresh)
+        text = texts.ANY_ACK.format(what=sent)
+        if user_id in _dropped:
+            _dropped.discard(user_id)
+            text = texts.STEP_FILES_LIMIT + "\n" + text
+        await bot.send_message(chat_id, text, reply_markup=any_kb(True))
+
+    upl.schedule_ack(user_id, "files", ack)
+
+
+@router.message(OrderSG.any_task, F.text)
+async def wiz_any_text(message: Message, state: FSMContext, session: AsyncSession, db_user: User) -> None:
+    """Текст условия: несколько сообщений подряд склеиваем."""
+    t = (message.text or "").strip()
+    if not t or t.startswith("/"):
+        await message.answer(texts.ANY_BAD_CONTENT)
+        return
+    async with upl.user_lock(db_user.id):
+        order = await current_draft(session, state, db_user.id)
+        if order is None:
+            await lost(message, state)
+            return
+        joined = f"{order.comment}\n{t}" if order.comment else t
+        if len(joined) > svc.MAX_ANY_TEXT:
+            await message.answer(texts.ANY_TEXT_LONG.format(n=svc.MAX_ANY_TEXT))
+            return
+        order.comment = joined
+        await session.commit()
+    await message.answer(texts.ANY_ACK.format(what=await any_sent(session, order)), reply_markup=any_kb(True))
+
+
+@router.message(OrderSG.any_task)
+async def wiz_any_other(message: Message, state: FSMContext, session: AsyncSession, db_user: User) -> None:
+    """Голосовые, стикеры, видео: просим фото, файл или текст."""
+    order = await current_draft(session, state, db_user.id)
+    if order is None:
+        await lost(message, state)
+        return
+    await message.answer(texts.ANY_BAD_CONTENT, reply_markup=any_kb(bool(await any_sent(session, order))))
+
+
+@router.callback_query(OrderSG.any_task, WizCb.filter(F.action == "any_done"))
+async def wiz_any_done(call: CallbackQuery, state: FSMContext, session: AsyncSession, db_user: User,
+                       s: RuntimeSettings, bot: Bot, config: Config) -> None:
+    order = await current_draft(session, state, db_user.id)
+    if order is None:
+        await call.answer()
+        await lost(call.message, state)
+        return
+    if not await any_sent(session, order):
+        await call.answer(texts.ANY_NEED_CONTENT, show_alert=True)
+        return
+    await call.answer()
+    await drop_kb(call)
+    upl.cancel_ack(db_user.id, "files")
+    if db_user.terms_accepted_at is None:
+        await goto("terms", call.message, state, session, order, s, db_user)
+        return
+    await submit(call.message, state, session, db_user, s, bot, config, order)
+
+
+@router.callback_query(OrderSG.any_task, WizCb.filter(F.action == "any_clear"))
+async def wiz_any_clear(call: CallbackQuery, state: FSMContext, session: AsyncSession, db_user: User,
+                        s: RuntimeSettings) -> None:
+    order = await current_draft(session, state, db_user.id)
+    if order is None:
+        await call.answer()
+        await lost(call.message, state)
+        return
+    async with upl.user_lock(db_user.id):
+        await svc.clear_files(session, order.id, "condition")
+        order.comment = None
+        await session.commit()
+    await call.answer("Очистили 🗑")
+    await drop_kb(call)
+    await goto("any", call.message, state, session, order, s, db_user)
+
+
 # ------------------------------------------------------------------ файлы: условие/материал, лекция, практика
 async def save_file(bot: Bot, config: Config, session: AsyncSession, order_id: int, kind: str,
                     f: upl.IncomingFile, user_id: int) -> bool:
-    """Скачать файл и добавить к черновику. False — уже MAX_FILES файлов этого вида (файл не взяли).
+    """Скачать файл и добавить к черновику. False - уже MAX_FILES файлов этого вида (файл не взяли).
     Тот же файл второй раз не добавляем (повтор альбома, «📥 Оформить заказ» после оформления)."""
     async def exists() -> bool:
         return bool(await session.scalar(select(OrderFile.id).where(
@@ -892,7 +1073,7 @@ async def wiz_variant_text(message: Message, state: FSMContext, session: AsyncSe
         await message.answer("Напиши номер варианта текстом или нажми «Без варианта».")
         return
     if len(t) > MAX_VARIANT:
-        await message.answer(f"Слишком длинно — уложись в {MAX_VARIANT} символа.")
+        await message.answer(f"Слишком длинно: уложись в {MAX_VARIANT} символа.")
         return
     await _set_variant(message, state, session, db_user, s, t)
 
@@ -913,8 +1094,9 @@ async def _set_deadline(message: Message, state: FSMContext, session: AsyncSessi
         return
     order.deadline_at = dt
     await session.commit()
-    hint = guide.deadline_hint(s, hours_between(now, dt))
-    note = f"✅ Срок: {fmt_dt(dt, with_weekday=True)} — {hint}"
+    note = f"✅ Срок: {fmt_dt(dt, with_weekday=True)}"
+    if s.urgency_for(order.subject):
+        note += f", {guide.deadline_hint(s, hours_between(now, dt))}"
     await goto(next_step("deadline", order, s), message, state, session, order, s, user, note=note)
 
 
@@ -1048,13 +1230,17 @@ async def wiz_terms_ok(call: CallbackQuery, state: FSMContext, session: AsyncSes
 async def submit(message: Message, state: FSMContext, session: AsyncSession, user: User, s: RuntimeSettings,
                  bot: Bot, config: Config, draft: Order) -> None:
     try:
-        order = await svc.submit_order(session, draft.id, s, now_utc())
+        if is_any(draft):
+            order = await svc.submit_any(session, draft.id, s, now_utc())
+        else:
+            order = await svc.submit_order(session, draft.id, s, now_utc())
     except svc.IntakeClosed as e:
         await message.answer(closed_text(e.state), reply_markup=remind_kb())
         return
     except svc.NotEnoughSlots as e:
         await message.answer(texts.NOT_ENOUGH_SLOTS.format(n=e.remaining))
-        await goto("count", message, state, session, draft, s, user)
+        if not is_any(draft):
+            await goto("count", message, state, session, draft, s, user)
         return
     except svc.OrderError as e:
         await message.answer(html.escape(str(e)))
@@ -1066,9 +1252,12 @@ async def submit(message: Message, state: FSMContext, session: AsyncSession, use
         return
     await state.clear()
     drafts.mark_shown()
-    await drafts.refresh_menu(session, user.id)  # черновика больше нет — кнопка «Продолжить» уходит из меню
+    await drafts.refresh_menu(session, user.id)  # черновика больше нет - кнопка «Продолжить» уходит из меню
     notes = "pending" in (order.lecture_status, order.practice_status)
-    if order.unlimited:
+    actions.order_created(user, order)
+    if is_any(order):
+        await message.answer(texts.ANY_SUBMITTED.format(id=order.id), reply_markup=main_menu())
+    elif order.unlimited:
         await message.answer(texts.SUBMITTED_UNLIMITED.format(id=order.id), reply_markup=main_menu())
     elif is_explain(order):
         await message.answer(texts.EXPLAIN_SUBMITTED.format(id=order.id), reply_markup=main_menu())
@@ -1080,9 +1269,12 @@ async def submit(message: Message, state: FSMContext, session: AsyncSession, use
 
 async def notify_new_order(bot: Bot, session: AsyncSession, config: Config, s: RuntimeSettings, order: Order,
                            user: User, notes: bool) -> None:
-    """Админам: сначала файлы (если включено), ниже — заголовок с кнопками. Ответ свайпом на заголовок уйдёт
+    """Админам: сначала файлы (если включено), ниже - заголовок с кнопками. Ответ свайпом на заголовок уйдёт
     клиенту как сообщение по заказу."""
     deadline = fmt_dt(order.deadline_at, with_weekday=True)
+    if is_any(order):
+        await notify_new_any(bot, session, config, s, order, user)
+        return
     if is_explain(order):
         text = texts.ADMIN_NEW_EXPLAIN.format(id=order.id, user=display_name(user), deadline=deadline)
         text += f"\n❓ <i>{html.escape((order.comment or '')[:700])}</i>"
@@ -1115,5 +1307,26 @@ async def notify_new_order(bot: Bot, session: AsyncSession, config: Config, s: R
                     log.warning("файлы заказа #%s админу %s не ушли: %s", order.id, admin_id, e)
                     break
     sent = await notify_admins(bot, config, text, markup_for=lambda _lvl: order_alert_kb(order.id))
+    remember_all(session, sent, "order", order.id, user.id, text)
+    await session.commit()
+
+
+async def notify_new_any(bot: Bot, session: AsyncSession, config: Config, s: RuntimeSettings, order: Order,
+                         user: User) -> None:
+    """v2.4: «📎 Любая задача» ждёт оценки: файлы (если включено) и заголовок с «💰 Назначить цену» / «❌ Отказать»."""
+    files = await svc.files_of(session, order.id, "condition")
+    text = texts.ADMIN_NEW_ANY.format(id=order.id, user=display_name(user), files=len(files))
+    if order.comment:
+        text += f"\n💬 <i>{html.escape(order.comment[:1500])}</i>"
+    if user.is_priority:
+        text += "\n⭐ приоритет"
+    text += "\n" + texts.ADMIN_REPLY_HINT.strip()
+    if s.admin_autosend_files and files:
+        for admin_id, _lvl in staff_targets(config, 1):
+            try:
+                await send_files(bot, admin_id, files, caption=f"📎 Условие · #{order.id}")
+            except (TelegramBadRequest, TelegramForbiddenError) as e:
+                log.warning("файлы задачи #%s админу %s не ушли: %s", order.id, admin_id, e)
+    sent = await notify_admins(bot, config, text, markup_for=lambda _lvl: any_alert_kb(order.id))
     remember_all(session, sent, "order", order.id, user.id, text)
     await session.commit()

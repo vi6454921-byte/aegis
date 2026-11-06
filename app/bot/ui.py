@@ -10,7 +10,7 @@ log = logging.getLogger(__name__)
 
 
 async def drop_kb(call: CallbackQuery) -> None:
-    """Убирает кнопки у сообщения, на котором нажали, — чтобы не нажимали старые."""
+    """Убирает кнопки у сообщения, на котором нажали, - чтобы не нажимали старые."""
     msg = call.message
     if not isinstance(msg, Message) or msg.reply_markup is None:
         return
@@ -21,7 +21,7 @@ async def drop_kb(call: CallbackQuery) -> None:
 
 
 async def show(call: CallbackQuery, text: str, kb: InlineKeyboardMarkup | None = None) -> Message | None:
-    """Перерисовывает экран в том же сообщении; если нельзя (фото/документ/старое) — шлёт новое.
+    """Перерисовывает экран в том же сообщении; если нельзя (фото/документ/старое) - шлёт новое.
     Возвращает сообщение, в котором теперь экран."""
     msg = call.message
     if isinstance(msg, Message) and msg.text is not None:

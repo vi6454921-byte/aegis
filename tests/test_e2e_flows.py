@@ -67,7 +67,7 @@ async def test_accept_redo_and_single_referral_reward(e2e, config, sessionmaker)
     assert "Эпюра Монжа" in await (await web.get(path(sol_btn.web_app.url))).text()  # старая версия видна
     await h.click(A1, "📤 Заменить решение")
     await upload_solution(h, V2, "v2.html")
-    await h.click(A1, "📦 Готово — отправить клиенту")
+    await h.click(A1, "📦 Готово, отправить клиенту")
     assert h.texts(A2).count(texts.ORDER_DONE.format(id=oid2)) == 2
     page = await (await web.get(path(sol_btn.web_app.url))).text()
     assert "Версия 2" in page and "Эпюра" not in page  # ссылка та же, решение новое
@@ -98,7 +98,7 @@ async def test_user_cancel_and_admin_reject(e2e, config, sessionmaker) -> None:
     await h.click(A1, "🚫 Отклонить")
     await h.send(A1, "Это не начерталка")
     assert (await get(sessionmaker, Order, oid2)).status == "rejected"
-    assert texts.ORDER_REJECTED.format(id=oid2, reason="\nПричина: Это не начерталка") in h.texts(A2)
+    assert texts.ORDER_REJECTED.format(id=oid2, reason="\n\nПричина: Это не начерталка") in h.texts(A2)
     async with sessionmaker() as db:
         assert await integrity_issues(db) == []
 
@@ -142,10 +142,10 @@ async def test_admin_edits_gift_links(e2e, config, sessionmaker) -> None:
     assert h.last_text(A1).startswith("✅ 🧮 Расчётка: example.github.io/rgr-15/")
     await h.click(A1, "🔢 Матрицы:")
     await h.send(A1, "-")  # скрыть подарок
-    assert "🔢 Матрицы: <b>— (скрыт)</b>" in h.last_text(A1)
+    assert "🔢 Матрицы: <b>скрыт</b>" in h.last_text(A1)
 
     await h.send(A2, "/start")
-    welcome = next(m.text for m, _ in reversed(h.screen(A2)) if (m.text or "").startswith("Привет!"))
+    welcome = next(m.text for m, _ in reversed(h.screen(A2)) if "Привет! Это Аегис" in (m.text or ""))
     assert gift_hrefs(welcome) == ["https://example.github.io/rgr-15/", GIFT_URLS[1]]
     await h.send(A2, texts.MAIN_MENU["gifts"])
     assert gift_hrefs(h.last_text(A2)) == ["https://example.github.io/rgr-15/", GIFT_URLS[1]]
@@ -160,7 +160,7 @@ async def test_admin_edits_gift_links(e2e, config, sessionmaker) -> None:
     await h.send(A2, texts.MAIN_MENU["gifts"])
     assert h.last_text(A2).startswith(texts.GIFTS_EMPTY)
     await h.send(A2, "/start")
-    welcome = next(m.text for m, _ in reversed(h.screen(A2)) if (m.text or "").startswith("Привет!"))
+    welcome = next(m.text for m, _ in reversed(h.screen(A2)) if "Привет! Это Аегис" in (m.text or ""))
     assert "{gifts}" not in welcome and texts.GIFTS_WELCOME_TITLE not in welcome and welcome.endswith("деньги.")
 
 
@@ -174,7 +174,7 @@ async def test_click_every_button(e2e, config, sessionmaker) -> None:
     pressed = await h.crawl(A2, entry=texts.MAIN_MENU["balance"])
     assert len(pressed) > 20, pressed
     for label in (texts.GUIDE_BTN, texts.GUIDE_NEXT, texts.GUIDE_DONE, "⏰ Сроки и цены", "📱 Оставить номер",
-                  "💬 Поддержка", texts.CHANNEL_CHECK_BTN, "Завтра · ×1,5", "Через 2 дня · без наценки"):
+                  "💬 Поддержка", texts.CHANNEL_CHECK_BTN, "Завтра", "Через 2 дня"):  # v2.4: у начерталки срок на цену не влияет
         assert label in pressed, label
 
     pressed = await h.crawl(A1, entry="/admin", skip=("AEGIS-",))  # десятки кодов в 🎟 Промокодах — по одному не жмём
@@ -208,7 +208,7 @@ async def test_telegram_stars_payment_and_star_refund(e2e, config, sessionmaker)
     oid = await wizard_order(h, A2, notes=False)
     await admin_invoice(h, oid, 20000)
     stars = stars_for(20000, "1.75")
-    assert f"Счётом — {stars} ⭐" in h.last_text(A2)
+    assert f"Счётом: <b>{stars} ⭐</b>" in h.last_text(A2)
     await h.click(A2, f"{texts.PAY_BTN} · {fmt_rub(20000)}")
     [inv] = h.calls("SendInvoice")
     assert inv.currency == "XTR" and inv.provider_token == "" and inv.prices[0].amount == stars
@@ -228,7 +228,7 @@ async def test_telegram_stars_payment_and_star_refund(e2e, config, sessionmaker)
     await h.click(A1, f"⭐ Звёздами ({stars})")
     [refund] = h.calls("RefundStarPayment")
     assert refund.telegram_payment_charge_id == "stars-charge-1" and refund.user_id == A2
-    assert texts.REFUNDED.format(id=oid, details=f"{stars} ⭐ — звёздами") in h.texts(A2)
+    assert texts.REFUNDED.format(id=oid, details=f"{stars} ⭐ звёздами") in h.texts(A2)
     async with sessionmaker() as db:
         pay = await db.scalar(select(Payment).where(Payment.order_id == oid))
         assert (pay.status, pay.refund_method) == ("refunded", "stars")
@@ -250,9 +250,9 @@ async def test_broadcast_with_preview_and_blocked_user(e2e, config, sessionmaker
 
     await h.send(A1, "/admin")
     await h.click(A1, "📣 Рассылка")
-    await h.click(A1, "Все — 3")
+    await h.click(A1, "Все: 3")
     await h.send(A1, "Скидки на выходных! 🎉")
-    assert h.texts(A1)[-2] == "👀 <b>Предпросмотр</b> — так увидят получатели:"
+    assert h.texts(A1)[-2] == "👀 <b>Предпросмотр</b>: так увидят получатели:"
     assert h.last_text(A1).startswith("Отправить 3 получателям")
     send_msg, send_btn = h.find_button(A1, "🚀 Отправить")
     await h.press(A1, send_msg, send_btn)
@@ -266,7 +266,7 @@ async def test_broadcast_with_preview_and_blocked_user(e2e, config, sessionmaker
     assert "заблокировали бота 1" in h.last_text(A1)
     await h.click(A1, "🛡 В админку")
     await h.click(A1, "📣 Рассылка")
-    h.find_button(A1, "Все — 2")  # заблокировавших в рассылку не берём
+    h.find_button(A1, "Все: 2")  # заблокировавших в рассылку не берём
     await h.press(A1, send_msg, send_btn)  # двойное нажатие до того, как кнопка исчезла, — без дубля
     assert "уже отправлена" in h.alerts()[-1]
     assert len([m for m in h.calls("CopyMessage") if m.chat_id == A2]) == 1

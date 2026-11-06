@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -9,7 +10,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, Update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app import texts
+from app import actionlog, texts
 from app.bot import drafts
 from app.bot.keyboards import main_menu, set_menu_admin, set_menu_draft
 from app.bot.pinned import on_update_user
@@ -49,7 +50,7 @@ class AntiFloodMiddleware(BaseMiddleware):
             key = (user.id, album)
             seen = self.albums.get(key)
             if seen is not None and now - seen < self.ALBUM_TTL:
-                return await handler(event, data)  # следующее фото того же альбома — бесплатно
+                return await handler(event, data)  # следующее фото того же альбома - бесплатно
             self.albums[key] = now
             if len(self.albums) > 10000:
                 self.albums = {k: t for k, t in self.albums.items() if now - t < self.ALBUM_TTL}
@@ -66,6 +67,54 @@ class AntiFloodMiddleware(BaseMiddleware):
         return await handler(event, data)
 
 
+class UserLockMiddleware(BaseMiddleware):
+    """v2.4: апдейты одного пользователя обрабатываются по очереди (asyncio.Lock на user_id).
+
+    Telegram может прислать сразу несколько /start или альбом: раньше они шли параллельно, и первое создание
+    записей (пользователь, закреплённый админ, реферал) могло случиться дважды. Разные пользователи
+    по-прежнему обрабатываются параллельно. Замки без ожидающих удаляются, словарь не растёт."""
+
+    def __init__(self) -> None:
+        self.locks: dict[int, list] = {}  # user_id → [замок, сколько апдейтов его держат или ждут]
+
+    async def __call__(self, handler: Handler, event: TelegramObject, data: dict[str, Any]) -> Any:
+        user = data.get("event_from_user")
+        if user is None:
+            return await handler(event, data)
+        entry = self.locks.get(user.id)
+        if entry is None:
+            entry = self.locks[user.id] = [asyncio.Lock(), 0]
+        entry[1] += 1
+        try:
+            async with entry[0]:
+                return await handler(event, data)
+        finally:
+            entry[1] -= 1
+            if entry[1] <= 0 and self.locks.get(user.id) is entry:
+                del self.locks[user.id]
+
+
+class ActionLogMiddleware(BaseMiddleware):
+    """v2.4: строка в журнал действий (aegis.actions) на каждое действие человека и «кто действует» для
+    строк из сервисов (заказ, оплата, бонусы, действия админов)."""
+
+    async def __call__(self, handler: Handler, event: TelegramObject, data: dict[str, Any]) -> Any:
+        user = data.get("event_from_user")
+        if not isinstance(event, Update) or user is None or user.is_bot:
+            return await handler(event, data)
+        token = actionlog.set_actor(user)
+        try:
+            try:
+                what = actionlog.describe(event)
+            except Exception:  # noqa: BLE001 - журнал не должен ломать обработку
+                what = None
+            if what:
+                actionlog.action(what, user)
+            return await handler(event, data)
+        finally:
+            actionlog.reset_actor(token)
+
+
 class DbSessionMiddleware(BaseMiddleware):
     def __init__(self, sessionmaker: async_sessionmaker[AsyncSession]):
         self.sessionmaker = sessionmaker
@@ -77,7 +126,7 @@ class DbSessionMiddleware(BaseMiddleware):
 
 
 def _chat_id(event: Update) -> int | None:
-    """Чат пользователя для сообщений и нажатий кнопок (остальные события — None)."""
+    """Чат пользователя для сообщений и нажатий кнопок (остальные события - None)."""
     if event.message is not None:
         return event.message.chat.id
     if event.callback_query is not None and event.callback_query.message is not None:
@@ -86,7 +135,7 @@ def _chat_id(event: Update) -> int | None:
 
 
 def _private(event: Update) -> bool | None:
-    """True — личный чат, False — группа/канал, None — у события нет чата (pre_checkout, inline)."""
+    """True - личный чат, False - группа/канал, None - у события нет чата (pre_checkout, inline)."""
     chat = None
     if event.message is not None:
         chat = event.message.chat
@@ -102,12 +151,12 @@ def _private(event: Update) -> bool | None:
 
 
 class UserMiddleware(BaseMiddleware):
-    """Регистрирует пользователя (реферал и метка — только при первом /start), грузит настройки и роли.
+    """Регистрирует пользователя (реферал и метка - только при первом /start), грузит настройки и роли.
 
-    В data: s (настройки), admin_level (0 — клиент, 1, 2), is_admin, is_owner, db_user, is_new_user, referrer,
+    В data: s (настройки), admin_level (0 - клиент, 1, 2), is_admin, is_owner, db_user, is_new_user, referrer,
     is_banned (админы забаненными не бывают). Сам бан обрабатывает роутер handlers/banned.py.
 
-    v2.2: человек с ником из SENIOR_ADMIN_USERNAMES впервые пишет боту — привязываем его id (закреплённый админ
+    v2.2: человек с ником из SENIOR_ADMIN_USERNAMES впервые пишет боту - привязываем его id (закреплённый админ
     2 уровня, app/services/pinned.py). Ожидание скрина по заданию (PromoSG) тихо отменяется, если человек нажал
     кнопку другого раздела: задания не мешают меню и заказам."""
 
@@ -131,7 +180,7 @@ class UserMiddleware(BaseMiddleware):
         if event.chat_member is not None or (event.my_chat_member is not None and private is False):
             return await handler(event, data)  # события канала: регистрировать некого
         if private is False:
-            return None  # бота добавили в группу — там он не работает
+            return None  # бота добавили в группу - там он не работает
         if tg_user is None or tg_user.is_bot:
             return await handler(event, data)
         payload = None
@@ -141,7 +190,13 @@ class UserMiddleware(BaseMiddleware):
             payload = parts[1] if len(parts) > 1 else None
         reg = await register_user(session, tg_user, payload, now_utc())
         if private and pinned.wants(self.config, tg_user):
-            await on_update_user(data["bot"], session, self.config, tg_user)
+            try:
+                await on_update_user(data["bot"], session, self.config, tg_user)
+            except Exception as e:  # noqa: BLE001 - закрепление не должно ломать ответ на сообщение
+                log.warning("не удалось закрепить админа @%s (id %s): %s: %s", tg_user.username, tg_user.id,
+                            type(e).__name__, e)
+                await session.rollback()
+            await session.refresh(reg.user)  # после rollback объекты сессии устарели: перечитываем
             level = self.config.admin_level(tg_user.id)
             data["admin_level"], data["is_admin"] = level, level > 0
             data["is_owner"] = tg_user.id in self.config.admin_ids
@@ -149,7 +204,7 @@ class UserMiddleware(BaseMiddleware):
         cq = event.callback_query
         if cq is not None and str(data.get("raw_state") or "").startswith("PromoSG:") \
                 and not (cq.data or "").startswith("pr:") and data.get("state") is not None:
-            await data["state"].clear()  # ушёл в другой раздел — ожидание скрина тихо отменяется
+            await data["state"].clear()  # ушёл в другой раздел - ожидание скрина тихо отменяется
             data["raw_state"] = None
         data["db_user"] = reg.user
         data["is_new_user"] = reg.created
@@ -172,7 +227,7 @@ class UserMiddleware(BaseMiddleware):
 
     async def _draft_saved_notice(self, data: dict[str, Any], session: AsyncSession, user_id: int,
                                   chat_id: int) -> None:
-        """Ушёл из оформления (кнопка меню, команда) — говорим, что черновик цел, и даём кнопку вернуться."""
+        """Ушёл из оформления (кнопка меню, команда) - говорим, что черновик цел, и даём кнопку вернуться."""
         now_state = str(await data["state"].get_state() or "")
         if now_state.startswith("OrderSG:"):
             return
@@ -181,5 +236,5 @@ class UserMiddleware(BaseMiddleware):
             if info is not None:
                 await data["bot"].send_message(chat_id, texts.DRAFT_SAVED.format(n=info.photos),
                                                reply_markup=main_menu())
-        except Exception:  # noqa: BLE001 — подсказка не должна ломать основной ответ
+        except Exception:  # noqa: BLE001 - подсказка не должна ломать основной ответ
             log.warning("не удалось показать подсказку о черновике %s", user_id, exc_info=True)

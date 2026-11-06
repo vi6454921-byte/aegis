@@ -1,4 +1,4 @@
-"""Забаненные пользователи: бот закрыт, но можно обжаловать бан — сообщение уходит админам как обращение."""
+"""Забаненные пользователи: бот закрыт, но можно обжаловать бан - сообщение уходит админам как обращение."""
 from __future__ import annotations
 
 import time
@@ -47,7 +47,7 @@ async def show_banned(message: Message, user: User) -> None:
 
 
 async def can_appeal(session: AsyncSession, user: User) -> bool:
-    """Новое обращение — раз в 12 часов, но сразу, если команда уже ответила на предыдущее."""
+    """Новое обращение - раз в 12 часов, но сразу, если команда уже ответила на предыдущее."""
     if user.appeal_at is None or now_utc() - user.appeal_at >= APPEAL_COOLDOWN:
         return True
     last = await tickets.last_appeal(session, user.id)

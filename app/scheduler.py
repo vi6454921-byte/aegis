@@ -1,4 +1,4 @@
-"""Фоновые задачи (APScheduler, время — Europe/Samara): бэкап, бонусы, напоминания, дедлайны, сводка.
+"""Фоновые задачи (APScheduler, время - Europe/Samara): бэкап, бонусы, напоминания, дедлайны, сводка.
 
 v2.3: «Это задание?» без ответа → в поддержку (раз в минуту), черновики без движения (предупреждение за день,
 затем удаление), безлимит по промокоду (напоминание за 3 дня до конца и «Безлимит закончился»)."""
@@ -58,7 +58,7 @@ async def burn_bonuses(bot: Bot, sessionmaker: async_sessionmaker[AsyncSession],
 
 async def remind_bonuses(bot: Bot, sessionmaker: async_sessionmaker[AsyncSession],
                          now: datetime | None = None) -> dict[int, int]:
-    """За 3 дня до сгорания — одно напоминание на партию (сумма и ближайшая дата по пользователю)."""
+    """За 3 дня до сгорания - одно напоминание на партию (сумма и ближайшая дата по пользователю)."""
     now = now or now_utc()
     horizon = end_of_local_day(local_today(now) + timedelta(days=3))
     per_user: dict[int, tuple[int, datetime]] = {}
@@ -82,7 +82,7 @@ async def remind_bonuses(bot: Bot, sessionmaker: async_sessionmaker[AsyncSession
 
 async def remind_open(bot: Bot, sessionmaker: async_sessionmaker[AsyncSession],
                       now: datetime | None = None) -> int:
-    """Утром: тем, кто нажал «Напомнить завтра», — если приём открыт."""
+    """Утром: тем, кто нажал «Напомнить завтра», - если приём открыт."""
     now = now or now_utc()
     async with sessionmaker() as session:
         s = await load_settings(session)
@@ -104,7 +104,7 @@ async def remind_open(bot: Bot, sessionmaker: async_sessionmaker[AsyncSession],
 
 DEADLINE_SOON_USER = timedelta(hours=12)  # клиенту: «оплати, до дедлайна мало времени»
 DEADLINE_ALERT_ADMIN = timedelta(hours=3)  # админам: «до дедлайна заказа в работе ≤ 3 ч»
-RECEIPT_WAIT = timedelta(hours=1)  # чек ждёт проверки дольше — напомнить админам
+RECEIPT_WAIT = timedelta(hours=1)  # чек ждёт проверки дольше - напомнить админам
 WORK_STATUSES = ("review", "paid", "in_work")
 
 
@@ -121,7 +121,7 @@ async def remind_unpaid(bot: Bot, sessionmaker: async_sessionmaker[AsyncSession]
         if hours <= 0:
             return 0
         orders = list((await session.execute(select(Order).where(
-            Order.status == "awaiting_payment", Order.pay_reminded_at.is_(None),
+            Order.status.in_(svc.PAYABLE), Order.pay_reminded_at.is_(None),
             Order.invoiced_at.is_not(None)).order_by(Order.id).limit(200))).scalars())
         due = []
         for o in orders:
@@ -145,7 +145,7 @@ async def remind_unpaid(bot: Bot, sessionmaker: async_sessionmaker[AsyncSession]
 
 async def alert_deadlines(bot: Bot, config: Config, sessionmaker: async_sessionmaker[AsyncSession],
                           now: datetime | None = None) -> int:
-    """Админам — один раз на заказ, когда до дедлайна ≤ 3 ч, а работа не сдана."""
+    """Админам - один раз на заказ, когда до дедлайна ≤ 3 ч, а работа не сдана."""
     now = now or now_utc()
     async with sessionmaker() as session:
         orders = list((await session.execute(select(Order).where(
@@ -157,7 +157,7 @@ async def alert_deadlines(bot: Bot, config: Config, sessionmaker: async_sessionm
         items = [(o.id, o.status, o.deadline_at, o.assignee_id) for o in orders]
     for oid, status, deadline, assignee in items:
         left = f"осталось {_left(deadline, now)}" if deadline > now else "срок уже прошёл"
-        text = (f"⏰ <b>Дедлайн близко</b>: заказ #{oid} — {left} (до {fmt_dt(deadline)}).\n"
+        text = (f"⏰ <b>Дедлайн близко</b>: заказ #{oid}, {left} (до {fmt_dt(deadline)}).\n"
                 f"Статус: {texts.STATUS.get(status, status)}" + ("" if assignee else " · исполнитель не назначен"))
         await notify_admins(bot, config, text, markup_for=lambda _lvl, oid=oid: order_alert_kb(oid))
     return len(items)
@@ -165,7 +165,7 @@ async def alert_deadlines(bot: Bot, config: Config, sessionmaker: async_sessionm
 
 async def remind_receipts(bot: Bot, config: Config, sessionmaker: async_sessionmaker[AsyncSession],
                           now: datetime | None = None) -> int:
-    """Чеки «я оплатил», которые ждут проверки дольше часа, — одно напоминание на чек."""
+    """Чеки «я оплатил», которые ждут проверки дольше часа, - одно напоминание на чек."""
     now = now or now_utc()
     async with sessionmaker() as session:
         waiting = [p for p in await manual_queue(session, 50)
@@ -199,8 +199,8 @@ async def channel_watch(bot: Bot, sessionmaker: async_sessionmaker[AsyncSession]
 
 async def profile_recheck(bot: Bot, sessionmaker: async_sessionmaker[AsyncSession],
                           now: datetime | None = None) -> int:
-    """«📌 Ссылка в профиле»: через N дней после одобрения смотрим «О себе» (getChat). Ссылки нет — награда
-    списывается (не ниже нуля) и приходит уведомление. Telegram не ответил — попробуем завтра."""
+    """«📌 Ссылка в профиле»: через N дней после одобрения смотрим «О себе» (getChat). Ссылки нет - награда
+    списывается (не ниже нуля) и приходит уведомление. Telegram не ответил - попробуем завтра."""
     now = now or now_utc()
     async with sessionmaker() as session:
         s = await load_settings(session)
@@ -233,13 +233,13 @@ async def watch(bot: Bot, config: Config, sessionmaker: async_sessionmaker[Async
                       ("профили", lambda: profile_recheck(bot, sessionmaker))):
         try:
             await job()
-        except Exception:  # noqa: BLE001 — одна упавшая часть не мешает остальным
+        except Exception:  # noqa: BLE001 - одна упавшая часть не мешает остальным
             log.exception("watch: часть «%s» упала", name)
 
 
 async def admin_digest(bot: Bot, config: Config, sessionmaker: async_sessionmaker[AsyncSession],
                        now: datetime | None = None) -> bool:
-    """09:00 — сводка для команды: что ждёт действий. Если ничего — не пишем."""
+    """09:00 - сводка для команды: что ждёт действий. Если ничего - не пишем."""
     now = now or now_utc()
     async with sessionmaker() as session:
         counts = await svc.status_counts(session)
@@ -247,16 +247,17 @@ async def admin_digest(bot: Bot, config: Config, sessionmaker: async_sessionmake
         receipts = len(await manual_queue(session, 100))
         task_count = await promo.pending_total(session)
         nearest = await svc.nearest_deadline(session, now)
-    parts = [("🔎 на проверке", counts.get("review", 0)), ("✅ в очереди", counts.get("paid", 0)),
+    parts = [("📎 ждут оценки", counts.get("estimate", 0)),
+             ("🔎 на проверке", counts.get("review", 0)), ("✅ в очереди", counts.get("paid", 0)),
              ("🛠 в работе", counts.get("in_work", 0)), ("⚠️ споры", counts.get("dispute", 0)),
-             ("💳 ждут оплаты", counts.get("awaiting_payment", 0)), ("🧾 чеки", receipts),
+             ("💳 ждут оплаты", counts.get("awaiting_payment", 0) + counts.get("quoted", 0)), ("🧾 чеки", receipts),
              ("📨 обращения", open_tickets), ("🎯 задания ждут проверки", task_count)]
     if not any(n for label, n in parts if label != "💳 ждут оплаты"):
         return False
     lines = ["☀️ <b>Доброе утро! Сводка на сегодня</b>"]
     lines += [f"{label}: <b>{n}</b>" for label, n in parts if n]
     if nearest is not None and nearest.deadline_at is not None:
-        lines.append(f"\n⏰ Ближайший дедлайн: #{nearest.id} — {fmt_dt(nearest.deadline_at)} "
+        lines.append(f"\n⏰ Ближайший дедлайн: #{nearest.id}, {fmt_dt(nearest.deadline_at)} "
                      f"({fmt_left(nearest.deadline_at, now)})")
     await notify_admins(bot, config, "\n".join(lines),
                         reply_markup=ik([cb("🛡 Открыть админку", AdminCb(s="m"))]))
@@ -267,7 +268,7 @@ async def drafts_cleanup(bot: Bot, config: Config, sessionmaker: async_sessionma
                          now: datetime | None = None) -> tuple[int, int]:
     """Раз в час: черновик без движения draft_ttl_days дней удаляем, а за день до этого предупреждаем
     (с кнопкой «▶️ Продолжить»). Без предупреждения черновик с фото или текстом не удаляется никогда: если бот
-    был выключен или черновик остался с 2.2 и уже старше срока — сначала предупреждаем, удаляем через сутки.
+    был выключен или черновик остался с 2.2 и уже старше срока - сначала предупреждаем, удаляем через сутки.
     Пустые черновики (без фото и текста) удаляем молча. → (предупредили, удалили)."""
     now = now or now_utc()
     warned, deleted, notes = 0, 0, []
@@ -295,7 +296,7 @@ async def drafts_cleanup(bot: Bot, config: Config, sessionmaker: async_sessionma
                         notes.append((user_id, texts.DRAFT_EXPIRED.format(days=max((now - last).days, days)),
                                       None))
             elif now >= last + ttl - day:
-                # updated_at не трогаем: предупреждение — не «движение» по черновику, срок не сдвигается
+                # updated_at не трогаем: предупреждение - не «движение» по черновику, срок не сдвигается
                 await session.execute(update(Order).where(Order.id == order.id)
                                       .values(draft_warned_at=now, updated_at=Order.updated_at))
                 await session.commit()
@@ -311,7 +312,7 @@ async def drafts_cleanup(bot: Bot, config: Config, sessionmaker: async_sessionma
 
 async def unlimited_watch(bot: Bot, config: Config, sessionmaker: async_sessionmaker[AsyncSession],
                           now: datetime | None = None) -> tuple[int, int]:
-    """Раз в час: за 3 дня до конца 30-дневного безлимита — одно напоминание; закончился — снимаем и сообщаем.
+    """Раз в час: за 3 дня до конца 30-дневного безлимита - одно напоминание; закончился - снимаем и сообщаем.
     → (напомнили, закончились)."""
     now = now or now_utc()
     async with sessionmaker() as session:

@@ -1,7 +1,7 @@
 """Задания v2.2 у пользователя: «📌 Ссылка в профиле», «📣 Пост о нас», «📣 Мои посты».
 
-Вход — «❓ Помощь» / «💰 Баланс» → «🎁 Бонусы и акции». Ожидание скрина или ссылки — состояние PromoSG;
-любая кнопка меню, команда или кнопка другого раздела тихо его отменяет (см. UserMiddleware) — без потерь:
+Вход - «❓ Помощь» / «💰 Баланс» → «🎁 Бонусы и акции». Ожидание скрина или ссылки - состояние PromoSG;
+любая кнопка меню, команда или кнопка другого раздела тихо его отменяет (см. UserMiddleware) - без потерь:
 вернуться к посту можно через «📣 Мои посты» в любой момент.
 """
 from __future__ import annotations
@@ -64,8 +64,7 @@ def image_of(message: Message) -> tuple[str, str] | None:
 
 
 def _album_seen(message: Message) -> bool:
-    """Альбом из нескольких скринов: берём первый, остальные молча пропускаем. Вызывать до первого await —
-    апдейты альбома обрабатываются параллельно."""
+    """Альбом из нескольких скринов: берём первый, остальные молча пропускаем. Вызывать до первого await -     апдейты альбома обрабатываются параллельно."""
     if not message.media_group_id or message.from_user is None:
         return False
     now = time.monotonic()
@@ -220,7 +219,7 @@ async def pr_post_url(message: Message, state: FSMContext, session: AsyncSession
     if found is None:
         await message.answer(texts.POST_URL_BAD.get(platform, texts.POST_URL_BAD["tg"]), reply_markup=cancel_kb())
         return
-    platform, url = found  # платформу берём по самой ссылке: прислали ВК вместо TG — тоже ок
+    platform, url = found  # платформу берём по самой ссылке: прислали ВК вместо TG - тоже ок
     try:
         await promo.check_url(session, db_user.id, url)
     except promo.PromoError as e:
@@ -319,7 +318,7 @@ async def pr_views_shot(message: Message, state: FSMContext) -> None:
 
 @router.message(PromoSG.views_count, extra_album_photo)
 async def pr_views_album_rest(message: Message) -> None:
-    """Остальные фото из альбома со скрином — не ответ на «сколько просмотров»."""
+    """Остальные фото из альбома со скрином - не ответ на «сколько просмотров»."""
 
 
 @router.message(PromoSG.views_count)
@@ -361,4 +360,4 @@ async def pr_cancel(call: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(F.media_group_id, extra_album_photo)
 async def album_rest(message: Message) -> None:
-    """Остальные фото из альбома, первый из которого уже приняли как скрин, — без «не понял»."""
+    """Остальные фото из альбома, первый из которого уже приняли как скрин, - без «не понял»."""

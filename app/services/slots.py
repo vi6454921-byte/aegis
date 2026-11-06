@@ -21,7 +21,7 @@ NOT_COUNTED = ("draft", "cancelled", "rejected")
 class IntakeState:
     open: bool
     reason: str | None  # manual | limit | None
-    remaining: int | None  # None — без лимита (открыто вручную)
+    remaining: int | None  # None - без лимита (открыто вручную)
     show_remaining: bool
     limit: int
     used: int
@@ -36,7 +36,7 @@ async def tasks_used_on(session: AsyncSession, day: date, exclude_unlimited: boo
 
 
 async def intake_state(session: AsyncSession, s, now: datetime, unlimited: bool = False) -> IntakeState:  # noqa: ANN001
-    """unlimited — заказ от клиента с безлимитом (важно, только если включён обход лимита)."""
+    """unlimited - заказ от клиента с безлимитом (важно, только если включён обход лимита)."""
     bypass = bool(s.unlimited_bypass_limit)
     used = await tasks_used_on(session, local_today(now), exclude_unlimited=bypass)
     limit = int(s.max_tasks_per_day)

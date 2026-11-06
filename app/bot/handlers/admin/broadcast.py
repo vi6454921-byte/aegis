@@ -38,7 +38,7 @@ async def b_menu(call: CallbackQuery, state: FSMContext, session: AsyncSession) 
     rows = []
     for key, title in SEGMENTS.items():
         n = len(await segment_user_ids(session, key, now))
-        rows.append([cb(f"{title} — {n}", AdminCb(s="b", a="seg", v=key))])
+        rows.append([cb(f"{title}: {n}", AdminCb(s="b", a="seg", v=key))])
     await show(call, "📣 <b>Рассылка</b>\nКому отправляем? (без забаненных и заблокировавших бота)",
                ik(*rows, [menu_btn()]))
 
@@ -51,7 +51,7 @@ async def b_segment(call: CallbackQuery, callback_data: AdminCb, state: FSMConte
     await state.set_state(AdminSG.broadcast_message)
     await state.update_data(segment=callback_data.v)
     await call.answer()
-    await call.message.answer(f"Сегмент: <b>{SEGMENTS[callback_data.v]}</b>.\nПришли сообщение для рассылки — текст, "
+    await call.message.answer(f"Сегмент: <b>{SEGMENTS[callback_data.v]}</b>.\nПришли сообщение для рассылки: текст, "
                               "фото, видео, файл. Сначала покажу предпросмотр.", reply_markup=ik([cancel_btn()]))
 
 
@@ -64,7 +64,7 @@ async def b_message(message: Message, state: FSMContext, session: AsyncSession, 
     session.add(b)
     await session.commit()
     n = len(await segment_user_ids(session, segment, now_utc()))
-    await message.answer("👀 <b>Предпросмотр</b> — так увидят получатели:")
+    await message.answer("👀 <b>Предпросмотр</b>: так увидят получатели:")
     await bot.copy_message(message.chat.id, message.chat.id, message.message_id)
     await message.answer(f"Отправить {n} получателям («{SEGMENTS.get(segment, segment)}»)?",
                          reply_markup=ik([cb("🚀 Отправить", AdminCb(s="b", a="send", id=b.id)),
@@ -78,7 +78,7 @@ async def _run_and_report(bot: Bot, sessionmaker: async_sessionmaker, broadcast_
                                       f"заблокировали бота: {b.blocked} · ошибок: {b.failed}")
     except Exception:  # noqa: BLE001
         log.exception("рассылка %s упала", broadcast_id)
-        await safe_send(bot, chat_id, f"⚠️ Рассылка #{broadcast_id} прервалась с ошибкой — смотри логи.")
+        await safe_send(bot, chat_id, f"⚠️ Рассылка #{broadcast_id} прервалась с ошибкой: смотри логи.")
 
 
 @router.callback_query(_f("send"))
@@ -94,7 +94,7 @@ async def b_send(call: CallbackQuery, callback_data: AdminCb, session: AsyncSess
     await session.commit()
     await call.answer("Поехали 🚀")
     await drop_kb(call)
-    await call.message.answer("🚀 Рассылка запущена — отчёт пришлём сюда, когда закончим.")
+    await call.message.answer("🚀 Рассылка запущена: отчёт пришлём сюда, когда закончим.")
     task = asyncio.create_task(_run_and_report(bot, sessionmaker, callback_data.id, call.from_user.id))
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)

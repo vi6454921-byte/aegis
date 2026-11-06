@@ -19,6 +19,7 @@ from app.config import Config
 from app.db.models import Order, Payment, User
 from app.payments import get_provider
 from app.payments.manual_provider import ManualPaymentProvider
+from app.services import design as dsvc
 from app.services import orders as svc
 from app.services import payments as paysvc
 from app.services.settings import RuntimeSettings
@@ -37,7 +38,11 @@ def plan_text(bonus: int, balance: int, invoice: int) -> str:
 def order_invoice_texts(order: Order, payment: Payment) -> tuple[str, str]:
     title = f"Аегис · заказ #{order.id}"
     if order.subject == svc.EXPLAIN:
-        desc = "Объяснение материала по фото лекции/практики — простыми словами, по шагам."
+        desc = "Объяснение материала по фото лекции или практики: простыми словами, по шагам."
+    elif order.subject == svc.ANY:
+        desc = texts.ANY_INVOICE_DESC
+    elif dsvc.is_design(order):
+        desc = texts.DESIGN_INVOICE_DESC.format(what=dsvc.describe_plain(order))
     else:
         desc = (f"{subject_name(order.subject).strip()}, {tasks_word(order.task_count or 0)}: разбор с 3D-моделью, "
                 f"решением и алгоритмом.")
@@ -54,9 +59,18 @@ async def send_invoice(bot: Bot, payment: Payment, title: str, desc: str, s: Run
     await get_provider(payment.provider).create_invoice(bot, payment, title, desc)
 
 
-async def report(bot: Bot, config: Config, res: paysvc.ConfirmResult, chat_id: int) -> None:
-    """Сообщения пользователю и админу по итогу проведения платежа (общие для всех провайдеров)."""
-    if res.status == "order_paid":
+async def report(bot: Bot, config: Config, res: paysvc.ConfirmResult, chat_id: int,
+                 session: AsyncSession | None = None, s: RuntimeSettings | None = None) -> None:
+    """Сообщения пользователю и админу по итогу проведения платежа (общие для всех провайдеров).
+    v2.4: заказ «🎨 Файлы и дизайн» сразу уходит исполнителям (нужна session, чтобы запомнить уведомления)."""
+    if res.status == "order_paid" and session is not None and dsvc.is_design(res.order):
+        from app.bot import designs  # noqa: PLC0415
+
+        o = res.order
+        await designs.notify_paid(bot, session, config, o, res.user,
+                                  plan_text(o.paid_bonus, o.paid_balance, o.paid_invoice),
+                                  autosend_files=bool(s.admin_autosend_files) if s is not None else True)
+    elif res.status == "order_paid":
         o = res.order
         await safe_send(bot, chat_id, texts.PAY_DONE_ORDER.format(id=o.id))
         await notify_admins(bot, config, texts.ADMIN_PAID.format(
@@ -78,7 +92,7 @@ async def report(bot: Bot, config: Config, res: paysvc.ConfirmResult, chat_id: i
                             + (" 🧪 тест" if p.is_test else ""))
     elif res.status == "failed":
         await safe_send(bot, chat_id, "Не получилось: баланс или бонусы изменились. Открой заказ и нажми "
-                                      "«💳 Оплатить» ещё раз — мы пересчитаем.")
+                                      "«💳 Оплатить» ещё раз: мы пересчитаем.")
     elif res.status == "duplicate":
         await safe_send(bot, chat_id, "Этот платёж уже учтён ✅")
     else:
@@ -95,16 +109,22 @@ async def pay_order(call: CallbackQuery, callback_data: PayCb, session: AsyncSes
         await call.answer(str(e), show_alert=True)
         return
     await call.answer()
+    await show_payment(call.message, session, payment, s, bot)
+
+
+async def show_payment(message: Message, session: AsyncSession, payment: Payment, s: RuntimeSettings,
+                       bot: Bot) -> None:
+    """Хватает баланса и бонусов - экран «✅ Оплатить с баланса», иначе счёт (тест, звёзды или перевод)."""
     order = await svc.get_order(session, payment.order_id)
     plan = plan_text(payment.plan_bonus, payment.plan_balance, payment.amount_rub)
     if payment.provider == "internal":
-        await call.message.answer(
-            f"🧾 Заказ #{order.id}: <b>{fmt_rub(order.price_final)}</b>\n{plan}\nСчёт не нужен — хватает баланса.",
+        await message.answer(
+            f"🧾 Заказ #{order.id}: <b>{fmt_rub(order.price_final)}</b>\n{plan}\nСчёт не нужен: хватает баланса.",
             reply_markup=ik([cb(texts.PAY_BALANCE_BTN, PayCb(action="balance", id=payment.id))],
                             [cb(texts.BTN_CANCEL, PayCb(action="drop", id=payment.id))]))
         return
     if payment.plan_bonus or payment.plan_balance:
-        await call.message.answer(f"🧾 Заказ #{order.id}: <b>{fmt_rub(order.price_final)}</b>\n{plan}")
+        await message.answer(f"🧾 Заказ #{order.id}: <b>{fmt_rub(order.price_final)}</b>\n{plan}")
     title, desc = order_invoice_texts(order, payment)
     await send_invoice(bot, payment, title, desc, s)
 
@@ -123,7 +143,7 @@ async def pay_from_balance(call: CallbackQuery, callback_data: PayCb, session: A
     if payment is None or payment.provider != "internal":
         await call.answer(texts.PAY_STALE, show_alert=True)
         return
-    if payment.is_test and s.payments_mode != "test":  # посчитано в тестовом режиме — тест уже выключен
+    if payment.is_test and s.payments_mode != "test":  # посчитано в тестовом режиме - тест уже выключен
         payment.status = "cancelled"
         await session.commit()
         await call.answer(texts.PAY_TEST_DISABLED, show_alert=True)
@@ -132,7 +152,7 @@ async def pay_from_balance(call: CallbackQuery, callback_data: PayCb, session: A
     await call.answer()
     await drop_kb(call)
     res = await paysvc.confirm_payment(session, payment.id, s, now_utc())
-    await report(bot, config, res, call.from_user.id)
+    await report(bot, config, res, call.from_user.id, session, s)
 
 
 @router.callback_query(PayCb.filter(F.action == "test"))
@@ -141,9 +161,9 @@ async def pay_test(call: CallbackQuery, callback_data: PayCb, session: AsyncSess
     payment = await _own_pending(session, callback_data.id, db_user)
     if payment is None or payment.provider != "test":
         await call.answer(texts.PAY_STALE, show_alert=True)
-        await drop_kb(call)  # счёт уже не действует — убираем его кнопки из чата
+        await drop_kb(call)  # счёт уже не действует - убираем его кнопки из чата
         return
-    if s.payments_mode != "test":  # тест выключен — счёт больше не нужен
+    if s.payments_mode != "test":  # тест выключен - счёт больше не нужен
         payment.status = "cancelled"
         await session.commit()
         await call.answer(texts.PAY_TEST_DISABLED, show_alert=True)
@@ -153,7 +173,7 @@ async def pay_test(call: CallbackQuery, callback_data: PayCb, session: AsyncSess
     await drop_kb(call)
     res = await get_provider("test").handle_success(session, payment, s, now_utc(),
                                                     charge_id=f"test_{payment.payload}")
-    await report(bot, config, res, call.from_user.id)
+    await report(bot, config, res, call.from_user.id, session, s)
 
 
 @router.callback_query(PayCb.filter(F.action == "drop"))
@@ -204,14 +224,14 @@ async def successful_payment(message: Message, session: AsyncSession, db_user: U
                   sp.telegram_payment_charge_id)
         await notify_admins(bot, config, f"⚠️ Пришла оплата без счёта в БД: {sp.total_amount} {sp.currency} от "
                                          f"{display_name(db_user)}, charge_id <code>{sp.telegram_payment_charge_id}"
-                                         f"</code>. Разберись вручную (возврат — refundStarPayment).")
-        await message.answer("Платёж получен, но счёт не нашёлся. Мы уже в курсе и разберёмся — "
-                             "деньги не потеряются. Вопросы — /paysupport.")
+                                         f"</code>. Разберись вручную (возврат: refundStarPayment).")
+        await message.answer("Платёж получен, но счёт не нашёлся. Мы уже в курсе и разберёмся: "
+                             "деньги не потеряются. Вопросы: /paysupport.")
         return
     res = await get_provider("stars").handle_success(session, payment, s, now_utc(),
                                                      charge_id=sp.telegram_payment_charge_id,
                                                      provider_charge_id=sp.provider_payment_charge_id)
-    await report(bot, config, res, message.chat.id)
+    await report(bot, config, res, message.chat.id, session, s)
 
 
 # ------------------------------------------------------------------ перевод по реквизитам: «Я оплатил» + чек
@@ -236,7 +256,7 @@ async def pay_claim(call: CallbackQuery, callback_data: PayCb, state: FSMContext
 
 async def _claim(message: Message, session: AsyncSession, user: User, bot: Bot, config: Config, pid: int,
                  file_id: str | None, file_type: str | None) -> None:
-    from app.bot.handlers.admin.receipts import notify_receipt  # noqa: PLC0415 — админка импортирует этот модуль
+    from app.bot.handlers.admin.receipts import notify_receipt  # noqa: PLC0415 - админка импортирует этот модуль
 
     try:
         payment = await paysvc.claim_manual(session, pid, user.id, file_id, file_type, now_utc())
@@ -261,7 +281,7 @@ async def pay_receipt(message: Message, state: FSMContext, session: AsyncSession
 
 @router.message(PaySG.receipt)
 async def pay_receipt_other(message: Message) -> None:
-    await message.answer("Пришли скрин или фото чека (можно PDF) — или нажми «Отправить без чека».")
+    await message.answer("Пришли скрин или фото чека (можно PDF) или нажми «Отправить без чека».")
 
 
 @router.callback_query(PayCb.filter(F.action == "noreceipt"))

@@ -65,11 +65,11 @@ def test_upgrade_from_v1_keeps_data(tmp_path: Path) -> None:
     upgrade_head(f"sqlite+aiosqlite:///{db}")  # повторный запуск ничего не ломает
 
     con = sqlite3.connect(db)
-    assert con.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0005"
+    assert con.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0007"
     assert con.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     assert con.execute("PRAGMA foreign_key_check").fetchall() == []
     keys = {k for (k,) in con.execute("SELECT key FROM settings")}
-    assert keys == {"terms_text", "price_nach"}
+    assert keys == {"terms_text"}  # v2.4 (0006): цены за задачу сброшены на 200 ₽ / 400 ₽
     con.close()
 
     async def check() -> None:
@@ -88,7 +88,7 @@ def test_upgrade_from_v1_keeps_data(tmp_path: Path) -> None:
 
                 s = await load_settings(session)
                 assert s.welcome_text == texts.DEFAULT_WELCOME and "мы" in texts.DEFAULT_WELCOME.lower()
-                assert s.terms_text == "Мои условия" and s.price_nach == 25000
+                assert s.terms_text == "Мои условия" and (s.price_nach, s.price_calc) == (20000, 40000)
                 assert s.referral_bonus == 0 and s.channel == "@aegis_samara"
 
                 # новые таблицы рабочие: забаненный из старой базы может обжаловать бан
@@ -161,7 +161,7 @@ def test_upgrade_from_v21_keeps_admins_and_money_and_adds_task_tables(tmp_path: 
     upgrade_head(f"sqlite+aiosqlite:///{db}")
     upgrade_head(f"sqlite+aiosqlite:///{db}")  # повторный запуск ничего не ломает
     con = sqlite3.connect(db)
-    assert con.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0005"
+    assert con.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0007"
     assert con.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     assert con.execute("PRAGMA foreign_key_check").fetchall() == []
     assert con.execute("SELECT user_id, level, added_by, pinned FROM admins").fetchall() == [(11, 1, 10, 0)]
@@ -178,7 +178,7 @@ def test_upgrade_from_v21_keeps_admins_and_money_and_adds_task_tables(tmp_path: 
                 assert (await session.get(Admin, 11)).pinned is False
                 assert await integrity_issues(session) == []
                 s = await load_settings(session)
-                assert s.price_nach == 30000  # своё значение из 2.1 осталось
+                assert (s.price_nach, s.price_calc) == (20000, 40000)  # v2.4: новые цены вместо старых
                 assert (s.profile_task_reward, s.post_base_reward, s.post_views_step) == (10000, 20000, 100)
                 assert (s.post_views_reward, s.post_views_cap, s.admin_give_confirm_over) == (10000, 0, 1000000)
 
@@ -199,8 +199,8 @@ def test_upgrade_from_v21_keeps_admins_and_money_and_adds_task_tables(tmp_path: 
 
 
 def test_upgrade_from_v22_keeps_data_and_adds_promo_codes(tmp_path: Path) -> None:
-    """2.2 → 2.3 (0004 → 0005): пользователи, деньги, заказы (и черновик с фото), переписка и шаги сценариев
-    на месте; добавлены 45 промокодов — ровно те, что в promo_codes.txt; новые таблицы пустые и рабочие."""
+    """2.2 → 2.4 (0004 → 0006): пользователи, деньги, заказы (и черновик с фото), переписка и шаги сценариев
+    на месте; таблица промокодов пустая (v2.4: коды выпускает только админ); новые таблицы рабочие."""
     from app.bot.drafts import draft_info
     from app.db.models import AdminChat, Order, PromoAttempt, StrayMessage
     from app.services import promocodes as pc
@@ -239,7 +239,7 @@ def test_upgrade_from_v22_keeps_data_and_adds_promo_codes(tmp_path: Path) -> Non
     upgrade_head(f"sqlite+aiosqlite:///{db}")
     upgrade_head(f"sqlite+aiosqlite:///{db}")  # повторный запуск ничего не ломает
     con = sqlite3.connect(db)
-    assert con.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0005"
+    assert con.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0007"
     assert con.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     assert con.execute("PRAGMA foreign_key_check").fetchall() == []
     assert con.execute("SELECT key, state FROM fsm_states").fetchall() == [("bot:20:20", "OrderSG:photos")]
@@ -264,15 +264,11 @@ def test_upgrade_from_v22_keeps_data_and_adds_promo_codes(tmp_path: Path) -> Non
                 s = await load_settings(session)
                 assert (s.unlimited_bypass_limit, s.draft_ttl_days, s.stray_timeout_minutes) == (False, 7, 10)
 
-                codes = await pc.all_codes(session)
-                assert len(codes) == 45 and sum(c.kind == "forever" for c in codes) == 35
-                assert all(c.days == 30 for c in codes if c.kind == "days")
-                assert all(c.used_by is None and c.revoked_at is None for c in codes)
-                from_file = pc.parse_txt((ROOT / "promo_codes.txt").read_text(encoding="utf-8"))
-                assert from_file == pc.parse_txt(pc.export_txt(codes))
-
-                now = now_utc()  # коды из файла работают, новые таблицы — тоже
-                res = await pc.activate(session, 21, from_file["Навсегда (35)"][0], now)
+                assert await pc.all_codes(session) == []  # v2.4: кодов в миграциях нет
+                assert not (ROOT / "promo_codes.txt").exists()
+                now = now_utc()  # коды, выпущенные админом, работают, новые таблицы тоже
+                made = await pc.generate(session, 3, "forever", None, 1001, now)
+                res = await pc.activate(session, 21, made[0].code, now)
                 assert res.ok and res.status == "forever"
                 assert (await session.get(Order, 2, populate_existing=True)).unlimited  # заказ на проверке — бесплатный
                 assert (await pc.activate(session, 20, "AEGIS-ZZZZ-ZZZZ", now)).status == "invalid"

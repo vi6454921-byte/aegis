@@ -32,7 +32,7 @@ class RevokeResult:
 
 async def reward_for_delivered(session: AsyncSession, order: Order, s, now: datetime) -> RewardResult | None:  # noqa: ANN001
     """Вызывается под app_lock, без commit."""
-    if order.rub_paid <= 0:  # заплачено только бонусами/бесплатно — не считается
+    if order.rub_paid <= 0:  # заплачено только бонусами/бесплатно - не считается
         return None
     ref = await session.scalar(select(Referral).where(Referral.referred_id == order.user_id))
     if ref is None or ref.rewarded:
@@ -66,7 +66,7 @@ async def reward_for_delivered(session: AsyncSession, order: Order, s, now: date
 
 
 async def revoke_for_order(session: AsyncSession, order: Order, now: datetime) -> RevokeResult | None:
-    """Если вернули заказ, за который дали бонус, — отзываем из остатка бонусов (не ниже нуля)."""
+    """Если вернули заказ, за который дали бонус, - отзываем из остатка бонусов (не ниже нуля)."""
     ref = await session.scalar(select(Referral).where(
         Referral.referred_id == order.user_id, Referral.rewarded.is_(True), Referral.reward_order_id == order.id))
     if ref is None:

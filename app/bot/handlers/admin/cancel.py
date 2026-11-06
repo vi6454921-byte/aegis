@@ -95,7 +95,7 @@ async def x_cancel(call: CallbackQuery, callback_data: AdminCb, state: FSMContex
         await show(call, *view)
         return
     msg = call.message
-    if isinstance(msg, Message) and msg.text is not None:  # вопрос новым сообщением — оставляем пометку
+    if isinstance(msg, Message) and msg.text is not None:  # вопрос новым сообщением - оставляем пометку
         try:
             await msg.edit_text("✖️ Отменено.", reply_markup=None)
             return

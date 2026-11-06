@@ -1,8 +1,8 @@
-"""Админка → «📥 Входящие»: всё, что ждёт нас, одним списком — заказы на проверке, споры и обращения без ответа.
+"""Админка → «📥 Входящие»: всё, что ждёт нас, одним списком - заказы на проверке, споры и обращения без ответа.
 
-Сначала новые. «📅 За сегодня» — только то, что пришло сегодня (по местному времени). Заказ открывается
-карточкой вместе с фото условия (у спора — со скринами замечания), обращение — своей карточкой с перепиской.
-Счётчик — в «Требует внимания» на главном экране /admin."""
+Сначала новые. «📅 За сегодня» - только то, что пришло сегодня (по местному времени). Заказ открывается
+карточкой вместе с фото условия (у спора - со скринами замечания), обращение - своей карточкой с перепиской.
+Счётчик - в «Требует внимания» на главном экране /admin."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -11,7 +11,7 @@ from datetime import datetime
 from aiogram import Bot, F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import texts
@@ -23,6 +23,7 @@ from app.bot.notify import send_files
 from app.bot.ui import show
 from app.config import Config
 from app.db.models import Order, Ticket, User
+from app.services import design as dsvc
 from app.services import orders as svc
 from app.services import tickets
 from app.services.users import short_name
@@ -30,9 +31,11 @@ from app.utils.timeutil import fmt_dt, local_day_bounds, local_today, now_utc
 
 router = admin_router("admin_inbox")
 PER_PAGE = 10
-ORDER_STATUSES = ("review", "dispute")
-ICONS = {"review": "🔎", "dispute": "⚠️"}
+ORDER_STATUSES = ("estimate", "review", "dispute")  # v2.4: «📎 Любая задача» ждёт оценки
+ICONS = {"estimate": "📎", "review": "🔎", "dispute": "⚠️", "design": "🎨"}
 WHAT = texts.INBOX_WHAT
+# v2.4: «🎨 Файлы и дизайн» проверки не ждёт: оплаченный заказ сразу во «Входящих», пока его не взяли
+WAITING = or_(Order.status.in_(ORDER_STATUSES), and_(Order.subject == dsvc.DESIGN, Order.status == "paid"))
 
 
 @dataclass
@@ -45,25 +48,35 @@ class Entry:
 
 
 def _order_time(o: Order) -> datetime:
+    if dsvc.is_design(o):
+        return o.paid_at or o.submitted_at or o.created_at
     return (o.updated_at if o.status == "dispute" else o.submitted_at) or o.updated_at or o.created_at
 
 
 async def count(session: AsyncSession) -> int:
     """Сколько всего во «Входящих»: заказы на проверке и споры + обращения, ждущие ответа."""
-    n_orders = int(await session.scalar(select(func.count(Order.id)).where(Order.status.in_(ORDER_STATUSES))) or 0)
+    n_orders = int(await session.scalar(select(func.count(Order.id)).where(WAITING)) or 0)
     return n_orders + await tickets.open_count(session)
 
 
 async def entries(session: AsyncSession, since: datetime | None = None) -> list[Entry]:
     out: list[Entry] = []
-    rows = (await session.execute(select(Order, User).join(User, User.id == Order.user_id)
-                                  .where(Order.status.in_(ORDER_STATUSES)))).all()
+    rows = (await session.execute(select(Order, User).join(User, User.id == Order.user_id).where(WAITING))).all()
     for o, u in rows:
         at = _order_time(o)
         if since is not None and at < since:
             continue
+        if dsvc.is_design(o):
+            short = f"{dsvc.what(o)} · {texts.INBOX_WHAT_DESIGN}" + (" · ♾" if o.unlimited else "")
+            out.append(Entry("order", o.id, at,
+                             texts.INBOX_ORDER_LINE.format(icon=ICONS["design"], id=o.id, what=dsvc.describe(o)
+                                                           + f" · {texts.INBOX_WHAT_DESIGN}"
+                                                           + (" · ♾" if o.unlimited else ""),
+                                                           user=short_name(u), when=fmt_dt(at)),
+                             f"{ICONS['design']} #{o.id} · {short_name(u)} · {short}"))
+            continue
         what = WHAT[o.status] + (" · ♾" if o.unlimited else "")
-        subject = texts.SUBJECTS.get(o.subject or "", "—")
+        subject = texts.SUBJECTS.get(o.subject or "", "-")
         out.append(Entry("order", o.id, at,
                          texts.INBOX_ORDER_LINE.format(icon=ICONS[o.status], id=o.id, what=f"{subject} · {what}",
                                                        user=short_name(u), when=fmt_dt(at)),
@@ -77,7 +90,7 @@ async def entries(session: AsyncSession, since: datetime | None = None) -> list[
         preview = (t.preview or "").replace("\n", " ")
         out.append(Entry("ticket", t.id, at,
                          texts.INBOX_TICKET_LINE.format(title=tickets.title(t), user=short_name(u), when=fmt_dt(at))
-                         + (f" — «{preview[:60]}»" if preview else ""),
+                         + (f": «{preview[:60]}»" if preview else ""),
                          f"💬 №{t.id} · {short_name(u)} · {preview[:24]}"))
     out.sort(key=lambda e: e.at, reverse=True)
     return out
@@ -116,7 +129,7 @@ async def in_list(call: CallbackQuery, callback_data: AdminCb, state: FSMContext
 @router.callback_query(AdminCb.filter((F.s == "in") & (F.a == "o")))
 async def in_order(call: CallbackQuery, callback_data: AdminCb, state: FSMContext, session: AsyncSession,
                    bot: Bot, config: Config) -> None:
-    """Заказ из «Входящих»: сначала фото (условие, у спора — скрины замечания), под ними — карточка с кнопками."""
+    """Заказ из «Входящих»: сначала фото (условие, у спора - скрины замечания), под ними - карточка с кнопками."""
     order = await svc.get_order(session, callback_data.id)
     if order is None or order.status == "draft":
         await call.answer(texts.NOT_FOUND, show_alert=True)
@@ -126,6 +139,8 @@ async def in_order(call: CallbackQuery, callback_data: AdminCb, state: FSMContex
     for kind, title in admin_orders.FILE_TITLES:
         if kind == "solution" or (kind == "dispute" and order.status != "dispute"):
             continue
+        if kind == "condition" and dsvc.is_design(order):
+            title = texts.DESIGN_FILES_TITLE
         files = await svc.files_of(session, order.id, kind)
         if files:
             await send_files(bot, call.from_user.id, files, caption=texts.INBOX_FILES_CAPTION.format(title=title, id=order.id))
